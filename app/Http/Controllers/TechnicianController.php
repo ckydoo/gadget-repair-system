@@ -1,0 +1,313 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Task;
+use App\Models\JobProgress;
+use App\Models\MaterialUsed;
+use App\Models\Invoice;
+use App\Services\NotificationService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+class TechnicianController extends Controller
+{
+    protected $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
+    /**
+     * Show technician dashboard
+     */
+    public function index()
+    {
+        $technician = auth()->user()->technician;
+
+        if (!$technician) {
+            abort(403, 'You are not registered as a technician.');
+        }
+
+        // Get active tasks
+        $activeTasks = Task::with(['user', 'deviceCategory', 'progress', 'materials'])
+            ->where('technician_id', auth()->id())
+            ->whereIn('status', ['assigned', 'checked_in', 'in_progress', 'waiting_parts'])
+            ->orderBy('assigned_at', 'asc')
+            ->get();
+
+        // Get completed tasks (last 30 days)
+        $completedTasks = Task::with(['user', 'deviceCategory'])
+            ->where('technician_id', auth()->id())
+            ->whereIn('status', ['completed', 'ready_for_collection', 'collected'])
+            ->where('completed_at', '>=', now()->subDays(30))
+            ->orderBy('completed_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        // Statistics
+        $stats = [
+            'active_count' => $activeTasks->count(),
+            'completed_today' => Task::where('technician_id', auth()->id())
+                ->whereDate('completed_at', today())
+                ->count(),
+            'total_completed' => Task::where('technician_id', auth()->id())
+                ->whereIn('status', ['completed', 'ready_for_collection', 'collected'])
+                ->count(),
+            'workload_weight' => $technician->getCurrentWorkloadWeight(),
+            'max_workload' => $technician->max_workload,
+        ];
+
+        return view('technician.index', compact('activeTasks', 'completedTasks', 'stats', 'technician'));
+    }
+
+    /**
+     * Show task details
+     */
+    public function showTask($taskId)
+    {
+        $task = Task::with([
+            'user',
+            'deviceCategory',
+            'booking',
+            'progress.technician',
+            'materials',
+            'invoice'
+        ])
+        ->where('technician_id', auth()->id())
+        ->findOrFail($taskId);
+
+        return view('technician.task-details', compact('task'));
+    }
+
+    /**
+     * Update task status
+     */
+    public function updateStatus(Request $request, $taskId)
+    {
+        $request->validate([
+            'status' => 'required|in:checked_in,in_progress,waiting_parts,completed',
+        ]);
+
+        $task = Task::where('technician_id', auth()->id())->findOrFail($taskId);
+
+        DB::beginTransaction();
+        try {
+            $task->update([
+                'status' => $request->status,
+                'started_at' => $request->status === 'in_progress' && !$task->started_at ? now() : $task->started_at,
+                'completed_at' => $request->status === 'completed' ? now() : $task->completed_at,
+            ]);
+
+            // Add automatic progress update
+            JobProgress::create([
+                'task_id' => $task->id,
+                'technician_id' => auth()->id(),
+                'stage' => 'Status Updated',
+                'notes' => "Status changed to: " . ucfirst(str_replace('_', ' ', $request->status)),
+            ]);
+
+            // Notify client
+            $this->notificationService->notifyClientJobProgress(
+                $task,
+                ucfirst(str_replace('_', ' ', $request->status)),
+                'Status updated by technician'
+            );
+
+            DB::commit();
+
+            return back()->with('success', 'Task status updated successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to update status: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Add progress update
+     */
+    public function addProgress(Request $request, $taskId)
+    {
+        $request->validate([
+            'stage' => 'required|string|max:255',
+            'notes' => 'nullable|string',
+            'images.*' => 'nullable|image|max:5120',
+        ]);
+
+        $task = Task::where('technician_id', auth()->id())->findOrFail($taskId);
+
+        DB::beginTransaction();
+        try {
+            // Handle image uploads
+            $imagePaths = [];
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $image) {
+                    $path = $image->store('progress-images', 'public');
+                    $imagePaths[] = $path;
+                }
+            }
+
+            // Create progress update
+            $progress = JobProgress::create([
+                'task_id' => $task->id,
+                'technician_id' => auth()->id(),
+                'stage' => $request->stage,
+                'notes' => $request->notes,
+                'images' => $imagePaths,
+            ]);
+
+            // Notify client
+            $this->notificationService->notifyClientJobProgress(
+                $task,
+                $request->stage,
+                $request->notes
+            );
+
+            DB::commit();
+
+            return back()->with('success', 'Progress update added successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to add progress: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Add material used
+     */
+    public function addMaterial(Request $request, $taskId)
+    {
+        $request->validate([
+            'material_name' => 'required|string|max:255',
+            'part_number' => 'nullable|string|max:100',
+            'quantity' => 'required|integer|min:1',
+            'unit_price' => 'required|numeric|min:0',
+        ]);
+
+        $task = Task::where('technician_id', auth()->id())->findOrFail($taskId);
+
+        try {
+            MaterialUsed::create([
+                'task_id' => $task->id,
+                'material_name' => $request->material_name,
+                'part_number' => $request->part_number,
+                'quantity' => $request->quantity,
+                'unit_price' => $request->unit_price,
+                'total_price' => $request->quantity * $request->unit_price,
+            ]);
+
+            return back()->with('success', 'Material added successfully!');
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to add material: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Complete task and generate invoice
+     */
+    public function completeTask(Request $request, $taskId)
+    {
+        $request->validate([
+            'labour_hours' => 'required|numeric|min:0',
+            'notes' => 'nullable|string',
+        ]);
+
+        $task = Task::with(['materials', 'booking', 'technician'])->where('technician_id', auth()->id())->findOrFail($taskId);
+
+        DB::beginTransaction();
+        try {
+            // Calculate costs
+            $materialsCost = $task->materials->sum('total_price');
+            $labourCost = $request->labour_hours * $task->technician->technician->hourly_rate;
+            $transportCost = $task->booking ? $task->booking->transport_fee : 0;
+            $diagnosticFee = $task->booking ? $task->booking->diagnostic_fee : 0;
+
+            // Generate invoice
+            $invoice = Invoice::create([
+                'invoice_number' => Invoice::generateInvoiceNumber(),
+                'task_id' => $task->id,
+                'user_id' => $task->user_id,
+                'materials_cost' => $materialsCost,
+                'labour_cost' => $labourCost,
+                'transport_cost' => $transportCost,
+                'diagnostic_fee' => $diagnosticFee,
+                'status' => 'pending',
+            ]);
+
+            $invoice->calculateTotals();
+            $invoice->save();
+
+            // Update task
+            $task->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+            ]);
+
+            // Add completion progress
+            JobProgress::create([
+                'task_id' => $task->id,
+                'technician_id' => auth()->id(),
+                'stage' => 'Task Completed',
+                'notes' => $request->notes ?? 'Repair/service completed successfully.',
+            ]);
+
+            // Notify client
+            $this->notificationService->notifyClientJobProgress(
+                $task,
+                'Task Completed',
+                'Your device has been repaired and is ready for final inspection.'
+            );
+
+            DB::commit();
+
+            return redirect()->route('technician.index')
+                ->with('success', 'Task completed and invoice generated!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to complete task: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Mark task as ready for collection
+     */
+    public function markReady($taskId)
+    {
+        $task = Task::where('technician_id', auth()->id())->findOrFail($taskId);
+
+        DB::beginTransaction();
+        try {
+            $task->update([
+                'status' => 'ready_for_collection',
+                'ready_at' => now(),
+                'warranty_expires_at' => now()->addDays($task->warranty_days),
+            ]);
+
+            // Create storage fee record
+            $category = $task->deviceCategory;
+            \App\Models\StorageFee::create([
+                'task_id' => $task->id,
+                'days_stored' => 0,
+                'daily_rate' => $category->getStorageFeeRate(),
+                'total_fee' => 0,
+            ]);
+
+            // Notify client
+            $this->notificationService->notifyClientDeviceReady($task);
+
+            DB::commit();
+
+            return back()->with('success', 'Task marked as ready for collection!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to mark as ready: ' . $e->getMessage());
+        }
+    }
+}

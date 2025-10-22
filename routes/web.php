@@ -7,10 +7,8 @@ use App\Http\Controllers\FrontDeskController;
 Route::get('/', function () {
     return view('welcome');
 });
-
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+// Dashboard route - redirects based on role
+Route::middleware(['auth'])->get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -78,4 +76,52 @@ Route::prefix('track')->name('tracking.')->group(function () {
     // AJAX endpoints for real-time updates
     Route::get('/{taskId}/timeline', [\App\Http\Controllers\TaskTrackingController::class, 'getTimeline'])->name('timeline');
     Route::get('/{taskId}/status', [\App\Http\Controllers\TaskTrackingController::class, 'getStatus'])->name('status');
+});
+
+// Technician Dashboard Routes - Protected by authentication
+Route::middleware(['auth'])->prefix('technician')->name('technician.')->group(function () {
+    // Dashboard
+    Route::get('/', [\App\Http\Controllers\TechnicianController::class, 'index'])->name('index');
+
+    // Task details
+    Route::get('/task/{task}', [\App\Http\Controllers\TechnicianController::class, 'showTask'])->name('task.show');
+
+    // Update task status
+    Route::post('/task/{task}/status', [\App\Http\Controllers\TechnicianController::class, 'updateStatus'])->name('task.update-status');
+
+    // Add progress update
+    Route::post('/task/{task}/progress', [\App\Http\Controllers\TechnicianController::class, 'addProgress'])->name('task.add-progress');
+
+    // Add material
+    Route::post('/task/{task}/material', [\App\Http\Controllers\TechnicianController::class, 'addMaterial'])->name('task.add-material');
+
+    // Complete task
+    Route::post('/task/{task}/complete', [\App\Http\Controllers\TechnicianController::class, 'completeTask'])->name('task.complete');
+
+    // Mark ready for collection
+    Route::post('/task/{task}/ready', [\App\Http\Controllers\TechnicianController::class, 'markReady'])->name('task.mark-ready');
+});
+
+// Manager/Supervisor Dashboard Routes - Protected by authentication
+Route::middleware(['auth'])->prefix('manager')->name('manager.')->group(function () {
+    // Dashboard
+    Route::get('/', [\App\Http\Controllers\ManagerController::class, 'index'])->name('index');
+
+    // Tasks Management
+    Route::get('/tasks', [\App\Http\Controllers\ManagerController::class, 'tasks'])->name('tasks');
+    Route::get('/tasks/{task}/review', [\App\Http\Controllers\ManagerController::class, 'reviewComplexity'])->name('tasks.review');
+    Route::post('/tasks/{task}/complexity', [\App\Http\Controllers\ManagerController::class, 'updateComplexity'])->name('tasks.update-complexity');
+    Route::post('/tasks/{task}/reassign', [\App\Http\Controllers\ManagerController::class, 'reassignTask'])->name('tasks.reassign');
+
+    // Technicians
+    Route::get('/technicians', [\App\Http\Controllers\ManagerController::class, 'technicians'])->name('technicians');
+
+    // Revenue
+    Route::get('/revenue', [\App\Http\Controllers\ManagerController::class, 'revenue'])->name('revenue');
+
+    // Customers
+    Route::get('/customers', [\App\Http\Controllers\ManagerController::class, 'customers'])->name('customers');
+
+    // Analytics
+    Route::get('/analytics', [\App\Http\Controllers\ManagerController::class, 'analytics'])->name('analytics');
 });

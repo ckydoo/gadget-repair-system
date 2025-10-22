@@ -42,13 +42,13 @@
                             @endrole
 
                             @role('technician|admin')
-                            <a href="#" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md font-medium">
+                            <a href="{{ route('technician.index') }}" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md font-medium">
                                 My Tasks
                             </a>
                             @endrole
 
                             @role('manager|supervisor|admin')
-                            <a href="#" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md font-medium">
+                            <a href="{{ route('manager.index') }}" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md font-medium">
                                 Dashboard
                             </a>
                             @endrole
