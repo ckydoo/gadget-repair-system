@@ -1,127 +1,146 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\BookingController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FrontDeskController;
+use App\Http\Controllers\ManagerController;
+use App\Http\Controllers\TaskTrackingController;
+use App\Http\Controllers\TechnicianController;
+use App\Http\Controllers\SmsTestController;
 
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+*/
+
+// Welcome page
 Route::get('/', function () {
     return view('welcome');
-});
-// Dashboard route - redirects based on role
-Route::middleware(['auth'])->get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
+})->name('home');
 
-Route::middleware('auth')->group(function () {
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+// Public tracking routes (no authentication required)
+Route::prefix('tracking')->name('tracking.')->group(function () {
+    Route::get('/', [TaskTrackingController::class, 'index'])->name('index');
+    Route::post('/search', [TaskTrackingController::class, 'search'])->name('search');
+    Route::get('/{taskId}', [TaskTrackingController::class, 'show'])->name('show');
+    Route::get('/{taskId}/timeline', [TaskTrackingController::class, 'getTimeline'])->name('timeline');
+    Route::get('/{taskId}/status', [TaskTrackingController::class, 'getStatus'])->name('status');
 });
 
+// Authentication routes
 require __DIR__.'/auth.php';
 
-// Front Desk Routes - Protected by authentication and role
-Route::middleware(['auth'])->prefix('frontdesk')->name('frontdesk.')->group(function () {
+// Dashboard route - redirects based on role
+Route::middleware(['auth', 'verified'])->get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+// Profile routes
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [\App\Http\Controllers\ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+// Client Booking Routes
+Route::middleware(['auth'])->prefix('bookings')->name('bookings.')->group(function () {
+    // Booking creation
+    Route::get('/', [BookingController::class, 'index'])->name('index');
+    Route::get('/create', [BookingController::class, 'create'])->name('create');
+    Route::post('/store', [BookingController::class, 'store'])->name('store');
+    Route::get('/success/{booking}', [BookingController::class, 'success'])->name('success');
+
+    // My bookings
+    Route::get('/my-bookings', [BookingController::class, 'myBookings'])->name('my-bookings');
+    Route::get('/{booking}', [BookingController::class, 'show'])->name('show');
+});
+
+// Front Desk Routes
+Route::middleware(['auth'])->prefix('frontdesk')->name('frontdesk.')->group(function () {
     // Dashboard
     Route::get('/', [FrontDeskController::class, 'index'])->name('index');
 
-    // Online Booking Check-in
-    Route::get('/checkin', [FrontDeskController::class, 'showCheckinForm'])->name('checkin');
-    Route::post('/checkin/search', [FrontDeskController::class, 'searchBooking'])->name('checkin.search');
-    Route::post('/checkin/process', [FrontDeskController::class, 'checkinOnlineBooking'])->name('checkin.process');
+    // Check-in process
+    Route::get('/checkin', [FrontDeskController::class, 'checkinForm'])->name('checkin');
+    Route::post('/checkin', [FrontDeskController::class, 'processCheckin'])->name('checkin.process');
 
-    // Walk-in Customer Registration
-    Route::get('/walkin', [FrontDeskController::class, 'showWalkinForm'])->name('walkin');
-    Route::post('/walkin/register', [FrontDeskController::class, 'registerWalkin'])->name('walkin.register');
+    // Walk-in registration
+    Route::get('/walkin', [FrontDeskController::class, 'walkinForm'])->name('walkin');
+    Route::post('/walkin', [FrontDeskController::class, 'createWalkin'])->name('walkin.create');
 
-    // Print Label
-    Route::get('/print-label/{task}', [FrontDeskController::class, 'printLabel'])->name('print-label');
-    Route::get('/label-data/{task}', [FrontDeskController::class, 'generateLabelData'])->name('label-data');
+    // Device collection
+    Route::get('/collection', [FrontDeskController::class, 'collectionForm'])->name('collection');
+    Route::post('/collection/{task}', [FrontDeskController::class, 'processCollection'])->name('collection.process');
 
-    // Search Tasks
-    Route::get('/search', [FrontDeskController::class, 'searchTasks'])->name('search');
-});
-// Online Booking Routes - Protected by authentication
-Route::middleware(['auth'])->prefix('bookings')->name('bookings.')->group(function () {
-    // Booking type selection
-    Route::get('/', [\App\Http\Controllers\BookingController::class, 'index'])->name('index');
-
-    // Service booking
-    Route::get('/service', [\App\Http\Controllers\BookingController::class, 'showServiceForm'])->name('service');
-    Route::post('/service', [\App\Http\Controllers\BookingController::class, 'storeService'])->name('service.store');
-    Route::post('/service/cost', [\App\Http\Controllers\BookingController::class, 'getServiceCost'])->name('service.cost');
-
-    // Repair booking
-    Route::get('/repair', [\App\Http\Controllers\BookingController::class, 'showRepairForm'])->name('repair');
-    Route::post('/repair', [\App\Http\Controllers\BookingController::class, 'storeRepair'])->name('repair.store');
-
-    // Payment
-    Route::get('/payment/{booking}', [\App\Http\Controllers\BookingController::class, 'showPayment'])->name('payment');
-    Route::post('/payment/{booking}', [\App\Http\Controllers\BookingController::class, 'processPayment'])->name('payment.process');
-
-    // Success page
-    Route::get('/success/{booking}', [\App\Http\Controllers\BookingController::class, 'success'])->name('success');
-
-    // My bookings
-    Route::get('/my-bookings', [\App\Http\Controllers\BookingController::class, 'myBookings'])->name('my-bookings');
-});
-// Task Tracking Routes - Public and authenticated
-Route::prefix('track')->name('tracking.')->group(function () {
-    // Public tracking search
-    Route::get('/', [\App\Http\Controllers\TaskTrackingController::class, 'index'])->name('index');
-    Route::post('/search', [\App\Http\Controllers\TaskTrackingController::class, 'search'])->name('search');
-
-    // Track specific task
-    Route::get('/{taskId}', [\App\Http\Controllers\TaskTrackingController::class, 'show'])->name('show');
-
-    // AJAX endpoints for real-time updates
-    Route::get('/{taskId}/timeline', [\App\Http\Controllers\TaskTrackingController::class, 'getTimeline'])->name('timeline');
-    Route::get('/{taskId}/status', [\App\Http\Controllers\TaskTrackingController::class, 'getStatus'])->name('status');
+    // Invoice payment
+    Route::post('/invoice/{invoice}/pay', [FrontDeskController::class, 'processPayment'])->name('invoice.pay');
 });
 
-// Technician Dashboard Routes - Protected by authentication
+// Technician Routes
 Route::middleware(['auth'])->prefix('technician')->name('technician.')->group(function () {
     // Dashboard
-    Route::get('/', [\App\Http\Controllers\TechnicianController::class, 'index'])->name('index');
+    Route::get('/', [TechnicianController::class, 'index'])->name('index');
 
     // Task details
-    Route::get('/task/{task}', [\App\Http\Controllers\TechnicianController::class, 'showTask'])->name('task.show');
+    Route::get('/task/{task}', [TechnicianController::class, 'showTask'])->name('task.show');
 
     // Update task status
-    Route::post('/task/{task}/status', [\App\Http\Controllers\TechnicianController::class, 'updateStatus'])->name('task.update-status');
+    Route::post('/task/{task}/status', [TechnicianController::class, 'updateStatus'])->name('task.update-status');
 
     // Add progress update
-    Route::post('/task/{task}/progress', [\App\Http\Controllers\TechnicianController::class, 'addProgress'])->name('task.add-progress');
+    Route::post('/task/{task}/progress', [TechnicianController::class, 'addProgress'])->name('task.add-progress');
 
     // Add material
-    Route::post('/task/{task}/material', [\App\Http\Controllers\TechnicianController::class, 'addMaterial'])->name('task.add-material');
+    Route::post('/task/{task}/material', [TechnicianController::class, 'addMaterial'])->name('task.add-material');
 
-    // Complete task
-    Route::post('/task/{task}/complete', [\App\Http\Controllers\TechnicianController::class, 'completeTask'])->name('task.complete');
+    // Complete task and generate invoice
+    Route::post('/task/{task}/complete', [TechnicianController::class, 'complete'])->name('task.complete');
 
     // Mark ready for collection
-    Route::post('/task/{task}/ready', [\App\Http\Controllers\TechnicianController::class, 'markReady'])->name('task.mark-ready');
+    Route::post('/task/{task}/ready', [TechnicianController::class, 'markReady'])->name('task.mark-ready');
 });
 
-// Manager/Supervisor Dashboard Routes - Protected by authentication
+// Manager/Supervisor Dashboard Routes
 Route::middleware(['auth'])->prefix('manager')->name('manager.')->group(function () {
     // Dashboard
-    Route::get('/', [\App\Http\Controllers\ManagerController::class, 'index'])->name('index');
+    Route::get('/', [ManagerController::class, 'index'])->name('index');
 
     // Tasks Management
-    Route::get('/tasks', [\App\Http\Controllers\ManagerController::class, 'tasks'])->name('tasks');
-    Route::get('/tasks/{task}/review', [\App\Http\Controllers\ManagerController::class, 'reviewComplexity'])->name('tasks.review');
-    Route::post('/tasks/{task}/complexity', [\App\Http\Controllers\ManagerController::class, 'updateComplexity'])->name('tasks.update-complexity');
-    Route::post('/tasks/{task}/reassign', [\App\Http\Controllers\ManagerController::class, 'reassignTask'])->name('tasks.reassign');
+    Route::get('/tasks', [ManagerController::class, 'tasks'])->name('tasks');
+    Route::get('/tasks/{task}/review', [ManagerController::class, 'reviewComplexity'])->name('tasks.review');
+    Route::post('/tasks/{task}/complexity', [ManagerController::class, 'updateComplexity'])->name('tasks.update-complexity');
+    Route::post('/tasks/{task}/reassign', [ManagerController::class, 'reassignTask'])->name('tasks.reassign');
 
     // Technicians
-    Route::get('/technicians', [\App\Http\Controllers\ManagerController::class, 'technicians'])->name('technicians');
+    Route::get('/technicians', [ManagerController::class, 'technicians'])->name('technicians');
 
     // Revenue
-    Route::get('/revenue', [\App\Http\Controllers\ManagerController::class, 'revenue'])->name('revenue');
+    Route::get('/revenue', [ManagerController::class, 'revenue'])->name('revenue');
 
     // Customers
-    Route::get('/customers', [\App\Http\Controllers\ManagerController::class, 'customers'])->name('customers');
+    Route::get('/customers', [ManagerController::class, 'customers'])->name('customers');
 
     // Analytics
-    Route::get('/analytics', [\App\Http\Controllers\ManagerController::class, 'analytics'])->name('analytics');
+    Route::get('/analytics', [ManagerController::class, 'analytics'])->name('analytics');
+});
+
+// SMS Testing & Management Routes (Manager/Admin only)
+Route::middleware(['auth'])->prefix('sms')->name('sms.')->group(function () {
+    // SMS Test Panel
+    Route::get('/test', [SmsTestController::class, 'index'])->name('test');
+
+    // Send Test SMS
+    Route::post('/send-test', [SmsTestController::class, 'sendTest'])->name('send-test');
+
+    // Test Day 3 Reminder
+    Route::get('/test-day3-reminder/{taskId}', [SmsTestController::class, 'testDay3Reminder'])->name('test-day3');
+
+    // Test Day 4 Reminder
+    Route::get('/test-day4-reminder/{taskId}', [SmsTestController::class, 'testDay4Reminder'])->name('test-day4');
+
+    // Check API Balance
+    Route::get('/balance', [SmsTestController::class, 'getBalance'])->name('balance');
+
+    // View SMS Logs
+    Route::get('/logs', [SmsTestController::class, 'logs'])->name('logs');
 });

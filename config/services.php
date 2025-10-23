@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'africas_talking' => [
+    'api_key' => env('AFRICAS_TALKING_API_KEY', ''),
+    'username' => env('AFRICAS_TALKING_USERNAME', 'sandbox'),
+    'shortcode' => env('AFRICAS_TALKING_SHORTCODE', null),
+    'environment' => env('AFRICAS_TALKING_ENVIRONMENT', 'sandbox'),
+],
 ];

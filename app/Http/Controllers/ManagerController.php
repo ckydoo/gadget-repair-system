@@ -26,8 +26,16 @@ class ManagerController extends Controller
      */
     public function index()
     {
+        $totalTechnicians = User::role('technician')->count();
+$availableTechnicians = User::role('technician')->count();
+
         // Overview Statistics
         $stats = [
+            'total_technicians' => $totalTechnicians,
+            'available_technicians' => $availableTechnicians,
+            'pending_invoices' => Invoice::where('status', 'pending')->count(),
+            'pending_amount' => Invoice::where('status', 'pending')->sum('total'),
+
             // Tasks
             'active_tasks' => Task::active()->count(),
             'completed_today' => Task::whereDate('completed_at', today())->count(),

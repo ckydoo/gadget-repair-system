@@ -53,7 +53,7 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Manager User',
                 'password' => Hash::make('password'),
-                'phone' => '+263771234568',
+                'phone' => '+263774888464',
                 'address' => '124 Main Street',
                 'city' => 'Harare',
                 'country' => 'Zimbabwe',
@@ -71,7 +71,7 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Supervisor User',
                 'password' => Hash::make('password'),
-                'phone' => '+263771234569',
+                'phone' => '+263774888464',
                 'address' => '125 Main Street',
                 'city' => 'Harare',
                 'country' => 'Zimbabwe',
@@ -89,7 +89,7 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Front Desk User',
                 'password' => Hash::make('password'),
-                'phone' => '+263771234570',
+                'phone' => '+263774888464',
                 'address' => '126 Main Street',
                 'city' => 'Harare',
                 'country' => 'Zimbabwe',
