@@ -73,4 +73,76 @@ class Technician extends Model
     {
         return $query->whereJsonContains('specializations', $categoryId);
     }
+
+
+
+    /**
+     * Get all device categories this technician specializes in
+     */
+    public function deviceCategories()
+    {
+        return DeviceCategory::whereIn('id', $this->specializations ?? [])->get();
+    }
+
+
+    /**
+     * Get completed tasks for this technician
+     */
+    public function completedTasks()
+    {
+        return $this->tasks()->where('status', 'completed');
+    }
+
+    /**
+     * Check if technician can handle a specific device category
+     */
+    public function canHandle($categoryId)
+    {
+        return in_array($categoryId, $this->specializations ?? []);
+    }
+
+    /**
+     * Get current workload (active tasks count)
+     */
+    public function getCurrentWorkload()
+    {
+        return $this->activeTasks()->count();
+    }
+
+    /**
+     * Check if technician has capacity for more tasks
+     */
+    public function hasCapacity()
+    {
+        return $this->is_available &&
+               $this->getCurrentWorkload() < $this->max_workload;
+    }
+
+    /**
+     * Get workload percentage
+     */
+    public function getWorkloadPercentage()
+    {
+        if ($this->max_workload == 0) {
+            return 0;
+        }
+
+        return min(100, ($this->getCurrentWorkload() / $this->max_workload) * 100);
+    }
+
+
+
+    /**
+     * Scope to get technicians with capacity
+     */
+    public function scopeWithCapacity($query)
+    {
+        return $query->where('is_available', true)
+                    ->whereRaw('(SELECT COUNT(*) FROM tasks WHERE technician_id = technicians.user_id AND status IN ("assigned", "checked_in", "in_progress", "waiting_parts")) < max_workload');
+    }
+
+    public function deviceCategoryRelations()
+{
+    return $this->belongsToMany(DeviceCategory::class, 'technician_specializations', 'technician_id', 'device_category_id');
+}
 }

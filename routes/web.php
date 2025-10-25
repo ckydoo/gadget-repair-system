@@ -136,7 +136,13 @@ Route::middleware(['auth'])->prefix('technician')->name('technician.')->group(fu
 
     // Complete task
     Route::post('/task/{task}/complete', [\App\Http\Controllers\TechnicianController::class, 'completeTask'])->name('task.complete');
-
+ // Technicians CRUD
+ Route::get('/technicians', [ManagerController::class, 'technicians'])->name('technicians');
+ Route::get('/technicians/create', [ManagerController::class, 'createTechnician'])->name('technicians.create');
+ Route::post('/technicians', [ManagerController::class, 'storeTechnician'])->name('technicians.store');
+ Route::get('/technicians/{technician}/edit', [ManagerController::class, 'editTechnician'])->name('technicians.edit');
+ Route::put('/technicians/{technician}', [ManagerController::class, 'updateTechnician'])->name('technicians.update');
+ Route::delete('/technicians/{technician}', [ManagerController::class, 'deleteTechnician'])->name('technicians.delete');
     // Mark ready for collection
     Route::post('/task/{task}/ready', [\App\Http\Controllers\TechnicianController::class, 'markReady'])->name('task.mark-ready');
 });

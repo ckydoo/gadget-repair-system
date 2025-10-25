@@ -111,4 +111,26 @@ class User extends Authenticatable
     {
         return $this->notifications()->unread()->count();
     }
+
+
+/**
+ * Get technician's active tasks
+ */
+public function getActiveTasks()
+{
+    return $this->assignedTasks()
+        ->whereIn('status', ['assigned', 'checked_in', 'in_progress', 'waiting_parts'])
+        ->get();
+}
+
+/**
+ * Get technician's completed tasks
+ */
+public function getCompletedTasks()
+{
+    return $this->assignedTasks()
+        ->where('status', 'completed')
+        ->get();
+}
+
 }

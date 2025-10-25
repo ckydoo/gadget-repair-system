@@ -11,6 +11,7 @@ use App\Services\TaskAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Hash;
 
 class ManagerController extends Controller
 {
@@ -184,42 +185,6 @@ $availableTechnicians = User::role('technician')->count();
         return back()->with('success', 'Task reassigned successfully!');
     }
 
-    /**
-     * Technician Performance
-     */
-    public function technicians()
-    {
-        $technicians = Technician::with(['user'])->get()->map(function($tech) {
-            $completed = Task::where('technician_id', $tech->user_id)
-                ->whereIn('status', ['completed', 'ready_for_collection', 'collected'])
-                ->count();
-
-            $completedThisMonth = Task::where('technician_id', $tech->user_id)
-                ->whereIn('status', ['completed', 'ready_for_collection', 'collected'])
-                ->whereMonth('completed_at', now()->month)
-                ->count();
-
-            $avgCompletionTime = Task::where('technician_id', $tech->user_id)
-                ->whereNotNull('completed_at')
-                ->whereNotNull('assigned_at')
-                ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, assigned_at, completed_at)) as avg_hours')
-                ->value('avg_hours');
-
-            return [
-                'id' => $tech->user_id,
-                'name' => $tech->user->name,
-                'active_tasks' => $tech->getActiveTasksCount(),
-                'workload_weight' => $tech->getCurrentWorkloadWeight(),
-                'max_workload' => $tech->max_workload,
-                'total_completed' => $completed,
-                'completed_this_month' => $completedThisMonth,
-                'avg_completion_hours' => round($avgCompletionTime ?? 0, 1),
-                'is_available' => $tech->is_available,
-            ];
-        });
-
-        return view('manager.technicians', compact('technicians'));
-    }
 
     /**
      * Revenue Reports
@@ -330,4 +295,202 @@ $availableTechnicians = User::role('technician')->count();
             'monthlyTrend'
         ));
     }
+
+
+    public function technicians()
+    {
+        $technicians = User::role('technician')
+            ->with(['technician', 'technician.deviceCategoryRelations']) // Use the new relationship
+            ->withCount([
+                'assignedTasks',
+                'assignedTasks as active_tasks_count' => function($query) {
+                    $query->whereIn('status', ['assigned', 'checked_in', 'in_progress', 'waiting_parts']);
+                },
+                'assignedTasks as completed_tasks_count' => function($query) {
+                    $query->where('status', 'completed');
+                }
+            ])
+            ->paginate(15);
+
+        return view('manager.technicians-crud', compact('technicians'));
+    }
+
+/**
+ * Show form to create new technician
+ */
+public function createTechnician()
+{
+    $deviceCategories = \App\Models\DeviceCategory::all();
+    return view('manager.technicians-create', compact('deviceCategories'));
+}
+
+/**
+ * Store new technician
+ */
+public function storeTechnician(Request $request)
+{
+    $validated = $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email',
+        'password' => 'required|string|min:8|confirmed',
+        'phone' => 'required|string|max:20',
+        'address' => 'nullable|string|max:500',
+        'city' => 'nullable|string|max:100',
+        'country' => 'nullable|string|max:100',
+        'specializations' => 'required|array|min:1',
+        'specializations.*' => 'exists:device_categories,id',
+        'hourly_rate' => 'required|numeric|min:0',
+        'max_workload' => 'required|integer|min:1|max:50',
+        'is_available' => 'boolean',
+    ]);
+
+    DB::beginTransaction();
+    try {
+        // Create user
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'phone' => $validated['phone'],
+            'address' => $validated['address'] ?? null,
+            'city' => $validated['city'] ?? null,
+            'country' => $validated['country'] ?? null,
+        ]);
+
+        // Assign technician role
+        $user->assignRole('technician');
+
+        // Create technician profile
+        \App\Models\Technician::create([
+            'user_id' => $user->id,
+            'specializations' => $validated['specializations'],
+            'hourly_rate' => $validated['hourly_rate'],
+            'max_workload' => $validated['max_workload'],
+            'is_available' => $validated['is_available'] ?? true,
+        ]);
+
+        DB::commit();
+
+        return redirect()->route('manager.technicians')
+            ->with('success', 'Technician created successfully!');
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return back()->with('error', 'Failed to create technician: ' . $e->getMessage())
+            ->withInput();
+    }
+}
+
+/**
+ * Show form to edit technician
+ */
+public function editTechnician($id)
+{
+    $technician = User::role('technician')
+        ->with('technician')
+        ->findOrFail($id);
+
+    $deviceCategories = \App\Models\DeviceCategory::all();
+
+    return view('manager.technicians-edit', compact('technician', 'deviceCategories'));
+}
+
+/**
+ * Update technician
+ */
+public function updateTechnician(Request $request, $id)
+{
+    $user = User::role('technician')->findOrFail($id);
+
+    $validated = $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email,' . $id,
+        'password' => 'nullable|string|min:8|confirmed',
+        'phone' => 'required|string|max:20',
+        'address' => 'nullable|string|max:500',
+        'city' => 'nullable|string|max:100',
+        'country' => 'nullable|string|max:100',
+        'specializations' => 'required|array|min:1',
+        'specializations.*' => 'exists:device_categories,id',
+        'hourly_rate' => 'required|numeric|min:0',
+        'max_workload' => 'required|integer|min:1|max:50',
+        'is_available' => 'boolean',
+    ]);
+
+    DB::beginTransaction();
+    try {
+        // Update user
+        $user->update([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'],
+            'address' => $validated['address'] ?? null,
+            'city' => $validated['city'] ?? null,
+            'country' => $validated['country'] ?? null,
+        ]);
+
+        // Update password if provided
+        if (!empty($validated['password'])) {
+            $user->update(['password' => Hash::make($validated['password'])]);
+        }
+
+        // Update technician profile
+        $user->technician->update([
+            'specializations' => $validated['specializations'],
+            'hourly_rate' => $validated['hourly_rate'],
+            'max_workload' => $validated['max_workload'],
+            'is_available' => $validated['is_available'] ?? true,
+        ]);
+
+        DB::commit();
+
+        return redirect()->route('manager.technicians')
+            ->with('success', 'Technician updated successfully!');
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return back()->with('error', 'Failed to update technician: ' . $e->getMessage())
+            ->withInput();
+    }
+}
+
+/**
+ * Delete technician
+ */
+public function deleteTechnician($id)
+{
+    $user = User::role('technician')->findOrFail($id);
+
+    // Check if technician has active tasks
+    $activeTasks = Task::where('technician_id', $user->id)
+        ->whereIn('status', ['assigned', 'checked_in', 'in_progress', 'waiting_parts'])
+        ->count();
+
+    if ($activeTasks > 0) {
+        return back()->with('error', 'Cannot delete technician with active tasks. Please reassign or complete their tasks first.');
+    }
+
+    DB::beginTransaction();
+    try {
+        // Delete technician profile
+        $user->technician()->delete();
+
+        // Remove role
+        $user->removeRole('technician');
+
+        // Delete user
+        $user->delete();
+
+        DB::commit();
+
+        return redirect()->route('manager.technicians')
+            ->with('success', 'Technician deleted successfully!');
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return back()->with('error', 'Failed to delete technician: ' . $e->getMessage());
+    }
+}
+
+
+
+
+
 }
