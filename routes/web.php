@@ -44,26 +44,39 @@ Route::middleware('auth')->group(function () {
 
 // Front Desk Routes - Protected by authentication and role
 Route::middleware(['auth'])->prefix('frontdesk')->name('frontdesk.')->group(function () {
-
     // Dashboard
     Route::get('/', [FrontDeskController::class, 'index'])->name('index');
 
-    // Online Booking Check-in
+    // Check-in process
     Route::get('/checkin', [FrontDeskController::class, 'showCheckinForm'])->name('checkin');
     Route::post('/checkin/search', [FrontDeskController::class, 'searchBooking'])->name('checkin.search');
-    Route::post('/checkin/process', [FrontDeskController::class, 'checkinOnlineBooking'])->name('checkin.process');
+    Route::post('/checkin', [FrontDeskController::class, 'checkinOnlineBooking'])->name('checkin.process');
 
-    // Walk-in Customer Registration
+    // Walk-in registration
     Route::get('/walkin', [FrontDeskController::class, 'showWalkinForm'])->name('walkin');
-    Route::post('/walkin/register', [FrontDeskController::class, 'registerWalkin'])->name('walkin.register');
+    Route::post('/walkin', [FrontDeskController::class, 'registerWalkin'])->name('walkin.create');
 
-    // Print Label
+    // Device collection/checkout - NEW ROUTES
+    Route::get('/collection', [FrontDeskController::class, 'collectionForm'])->name('collection');
+    Route::post('/collection/search', [FrontDeskController::class, 'searchCollection'])->name('collection.search');
+    Route::post('/collection/{task}', [FrontDeskController::class, 'processCollection'])->name('collection.process');
+    Route::get('/collection/receipt/{task}', [FrontDeskController::class, 'collectionReceipt'])->name('collection-receipt');
+
+    // Invoice payment
+    Route::post('/invoice/{invoice}/pay', [FrontDeskController::class, 'processPayment'])->name('invoice.pay');
+
+    // Label printing
     Route::get('/print-label/{task}', [FrontDeskController::class, 'printLabel'])->name('print-label');
-    Route::get('/label-data/{task}', [FrontDeskController::class, 'generateLabelData'])->name('label-data');
+    Route::get('/label-data/{task}', [FrontDeskController::class, 'getLabelData'])->name('label-data');
 
-    // Search Tasks
+    // Search tasks
     Route::get('/search', [FrontDeskController::class, 'searchTasks'])->name('search');
 });
+
+
+
+
+
 
 // Online Booking Routes - Protected by authentication
 Route::middleware(['auth'])->prefix('bookings')->name('bookings.')->group(function () {

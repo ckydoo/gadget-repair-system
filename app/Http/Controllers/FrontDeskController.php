@@ -6,6 +6,8 @@ use App\Models\Task;
 use App\Models\User;
 use App\Models\DeviceCategory;
 use App\Models\Booking;
+use App\Models\Invoice;
+use App\Models\StorageFee;
 use App\Services\TaskAssignmentService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
@@ -44,6 +46,9 @@ class FrontDeskController extends Controller
             ->whereDoesntHave('task')
             ->count();
 
+        $readyForCollection = Task::where('status', 'ready_for_collection')
+            ->count();
+
         $recentTasks = Task::with(['user', 'deviceCategory', 'technician'])
             ->whereDate('created_at', today())
             ->orderBy('created_at', 'desc')
@@ -54,6 +59,7 @@ class FrontDeskController extends Controller
             'todayCheckins',
             'onlineBookingsToday',
             'pendingCheckins',
+            'readyForCollection',
             'recentTasks'
         ));
     }
@@ -178,50 +184,36 @@ class FrontDeskController extends Controller
                     'email' => $request->customer_email ?? 'walkin_' . time() . '@gadgetrepair.local',
                     'phone' => $request->customer_phone,
                     'address' => $request->customer_address,
-                    'password' => Hash::make('password123'), // Default password
+                    'password' => Hash::make('password123'),
                 ]);
                 $customer->assignRole('client');
             }
 
-            // Get device category
-            $category = DeviceCategory::find($request->device_category_id);
-
-            // Generate unique task ID
+            // Create task
+            $category = DeviceCategory::findOrFail($request->device_category_id);
             $taskId = Task::generateTaskId($customer->name, $category->code);
 
-            // Assign technician automatically
-            $technician = $this->taskAssignmentService->assignTechnician($category->id);
-
-            if (!$technician) {
-                DB::rollBack();
-                return back()->with('error', 'No available technician found for this category.');
-            }
-
-            // Create task directly (walk-in has no booking)
             $task = Task::create([
                 'task_id' => $taskId,
                 'user_id' => $customer->id,
-                'device_category_id' => $category->id,
-                'technician_id' => $technician->id,
+                'device_category_id' => $request->device_category_id,
                 'type' => $request->type,
                 'device_brand' => $request->device_brand,
                 'device_model' => $request->device_model,
                 'problem_description' => $request->problem_description,
+                'complexity_weight' => $category->complexity_weight,
                 'is_walkin' => true,
                 'status' => 'checked_in',
-                'assigned_at' => now(),
+                'warranty_days' => $category->warranty_days,
             ]);
 
-            // Notify technician
-            $this->notificationService->notifyTechnicianNewJob($task);
-
-            // Notify manager and supervisor
-            $this->notificationService->notifyManagementNewJob($task);
+            // Auto-assign technician
+            $this->taskAssignmentService->assignTask($task);
 
             DB::commit();
 
             return redirect()->route('frontdesk.print-label', $task->id)
-                ->with('success', 'Walk-in customer registered successfully! Task ID: ' . $taskId);
+                ->with('success', 'Walk-in customer registered successfully!');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -230,28 +222,204 @@ class FrontDeskController extends Controller
     }
 
     /**
-     * Show print label page
+     * Show collection form
+     */
+    public function collectionForm()
+    {
+        $readyTasks = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee'])
+            ->where('status', 'ready_for_collection')
+            ->orderBy('ready_at', 'asc')
+            ->get();
+
+        return view('frontdesk.collection', compact('readyTasks'));
+    }
+
+    /**
+     * Search for device ready for collection
+     */
+    public function searchCollection(Request $request)
+    {
+        $request->validate([
+            'task_id' => 'required|string',
+        ]);
+
+        $task = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee', 'technician'])
+            ->where('task_id', $request->task_id)
+            ->first();
+
+        if (!$task) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Task ID not found. Please check and try again.',
+            ], 404);
+        }
+
+        if ($task->status !== 'ready_for_collection') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This device is not ready for collection yet. Current status: ' . ucfirst(str_replace('_', ' ', $task->status)),
+            ], 400);
+        }
+
+        // Check if invoice is paid
+        if (!$task->invoice || $task->invoice->status !== 'paid') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice must be paid before device can be collected.',
+                'task' => $task,
+                'requires_payment' => true,
+            ], 400);
+        }
+
+        // Calculate storage fees if applicable
+        $storageFee = 0;
+        if ($task->storageFee) {
+            $task->storageFee->calculateFee();
+            $storageFee = $task->storageFee->total_fee;
+        }
+
+        return response()->json([
+            'success' => true,
+            'task' => $task,
+            'storage_fee' => $storageFee,
+            'days_stored' => $task->getDaysUncollected(),
+        ]);
+    }
+
+    /**
+     * Process device collection (checkout)
+     */
+    public function processCollection(Request $request, $taskId)
+    {
+        $request->validate([
+            'collected_by' => 'required|string|max:255',
+            'id_type' => 'required|string|max:50',
+            'id_number' => 'required|string|max:50',
+            'storage_fee_paid' => 'nullable|boolean',
+        ]);
+
+        $task = Task::with(['user', 'invoice', 'storageFee'])->findOrFail($taskId);
+
+        // Verify task is ready for collection
+        if ($task->status !== 'ready_for_collection') {
+            return back()->with('error', 'This device is not ready for collection.');
+        }
+
+        // Verify invoice is paid
+        if (!$task->invoice || $task->invoice->status !== 'paid') {
+            return back()->with('error', 'Invoice must be paid before device can be collected.');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Check if there are storage fees
+            if ($task->storageFee && $task->storageFee->total_fee > 0) {
+                if (!$request->storage_fee_paid) {
+                    return back()->with('error', 'Storage fee must be paid before collection.');
+                }
+
+                // Mark storage fee as paid
+                $task->storageFee->update([
+                    'paid_at' => now(),
+                ]);
+            }
+
+            // Update task to collected
+            $task->update([
+                'status' => 'collected',
+                'collected_at' => now(),
+            ]);
+
+            // Log collection details (you may want to create a separate model for this)
+            // For now, we'll add it to a notes field or create a simple log
+
+            // Send notification to client
+            $this->notificationService->notifyClientDeviceCollected($task);
+
+            DB::commit();
+
+            return redirect()->route('frontdesk.collection-receipt', $task->id)
+                ->with('success', 'Device collected successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Collection failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Show collection receipt
+     */
+    public function collectionReceipt($taskId)
+    {
+        $task = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee', 'technician'])
+            ->findOrFail($taskId);
+
+        return view('frontdesk.collection-receipt', compact('task'));
+    }
+
+    /**
+     * Process invoice payment at front desk
+     */
+    public function processPayment(Request $request, $invoiceId)
+    {
+        $request->validate([
+            'payment_method' => 'required|in:cash,card,mobile_money',
+            'amount_received' => 'required|numeric|min:0',
+        ]);
+
+        $invoice = Invoice::with('task')->findOrFail($invoiceId);
+
+        if ($invoice->status === 'paid') {
+            return back()->with('error', 'This invoice has already been paid.');
+        }
+
+        if ($request->amount_received < $invoice->total) {
+            return back()->with('error', 'Insufficient payment amount.');
+        }
+
+        DB::beginTransaction();
+        try {
+            $invoice->update([
+                'status' => 'paid',
+                'paid_at' => now(),
+                'payment_method' => $request->payment_method,
+            ]);
+
+            // Notify client
+            $this->notificationService->notifyClientPaymentReceived($invoice->task);
+
+            DB::commit();
+
+            $change = $request->amount_received - $invoice->total;
+            return back()->with('success', 'Payment processed successfully! Change: $' . number_format($change, 2));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Payment processing failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Print device label
      */
     public function printLabel($taskId)
     {
-        $task = Task::with(['user', 'deviceCategory', 'technician'])
-            ->findOrFail($taskId);
+        $task = Task::with(['user', 'deviceCategory'])->findOrFail($taskId);
 
         return view('frontdesk.print-label', compact('task'));
     }
 
     /**
-     * Generate label data for printing
+     * Get label data for printing
      */
-    public function generateLabelData($taskId)
+    public function getLabelData($taskId)
     {
-        $task = Task::with(['user', 'deviceCategory', 'technician'])
-            ->findOrFail($taskId);
+        $task = Task::with(['user', 'deviceCategory'])->findOrFail($taskId);
 
         return response()->json([
             'task_id' => $task->task_id,
-            'customer_name' => $task->user->name,
-            'technician_name' => $task->technician->name,
+            'customer' => $task->user->name,
             'device' => $task->device_brand . ' ' . $task->device_model,
             'category' => $task->deviceCategory->name,
             'date' => $task->created_at->format('d/m/Y H:i'),

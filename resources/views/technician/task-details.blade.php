@@ -1,8 +1,3 @@
-
-<!-- ============================================================ -->
-<!-- VIEW 2: Task Details Page -->
-<!-- File: resources/views/technician/task-details.blade.php -->
-<!-- ============================================================ -->
 @extends('layouts.app')
 
 @section('content')
@@ -13,7 +8,7 @@
         </a>
         <div class="flex justify-between items-start">
             <div>
-                <h1 class="text-3xl font-bold text-gray-800">Task Details</h1>
+                <h1 class="text-3xl font-bold text-gray-800">Task Details / Job Card</h1>
                 <p class="text-gray-600">Task ID: <span class="font-mono font-bold text-blue-600">{{ $task->task_id }}</span></p>
             </div>
             <div>
@@ -21,6 +16,7 @@
                     @if($task->status === 'in_progress') bg-blue-100 text-blue-800
                     @elseif($task->status === 'waiting_parts') bg-yellow-100 text-yellow-800
                     @elseif($task->status === 'completed') bg-green-100 text-green-800
+                    @elseif($task->status === 'ready_for_collection') bg-purple-100 text-purple-800
                     @else bg-gray-100 text-gray-800
                     @endif">
                     {{ ucfirst(str_replace('_', ' ', $task->status)) }}
@@ -44,6 +40,43 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
+            <!-- Problem Images from Client -->
+            @if($task->problem_images && count($task->problem_images) > 0)
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">📸 Problem Images (Uploaded by Client)</h2>
+                <p class="text-sm text-gray-600 mb-4">Client provided {{ count($task->problem_images) }} image(s) showing the issue</p>
+
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    @foreach($task->problem_images as $index => $image)
+                    <div class="relative group">
+                        <img
+                            src="{{ Storage::url($image) }}"
+                            alt="Problem Image {{ $index + 1 }}"
+                            class="w-full h-48 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-blue-500 transition"
+                            onclick="openImageModal('{{ Storage::url($image) }}')"
+                        >
+                        <div class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
+                            Image {{ $index + 1 }}
+                        </div>
+                        <!-- Download button -->
+                        <a
+                            href="{{ Storage::url($image) }}"
+                            download
+                            class="absolute top-2 right-2 bg-blue-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition"
+                            title="Download image"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                        </a>
+                    </div>
+                    @endforeach
+                </div>
+
+                <p class="text-xs text-gray-500 mt-3">💡 Click on any image to view full size</p>
+            </div>
+            @endif
+
             <!-- Quick Actions -->
             @if(!in_array($task->status, ['completed', 'ready_for_collection', 'collected']))
             <div class="bg-white rounded-lg shadow p-6">
@@ -85,12 +118,13 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Images (Optional)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Progress Images (Optional)</label>
                             <input type="file" name="images[]" multiple accept="image/*"
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                            <p class="text-xs text-gray-500 mt-1">You can upload multiple images to show your work progress</p>
                         </div>
 
-                        <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
+                        <button type="submit" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
                             Add Progress Update
                         </button>
                     </div>
@@ -98,102 +132,118 @@
             </div>
             @endif
 
-            <!-- Progress Timeline -->
+            <!-- Add Material -->
+            @if(!in_array($task->status, ['completed', 'ready_for_collection', 'collected']))
             <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Progress Timeline</h2>
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Add Material/Part Used</h2>
 
-                @forelse($task->progress as $progress)
-                <div class="flex mb-6 last:mb-0">
-                    <div class="flex-shrink-0">
-                        <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                            <svg class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                            </svg>
+                <form action="{{ route('technician.task.add-material', $task->id) }}" method="POST">
+                    @csrf
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Material Name *</label>
+                            <input type="text" name="material_name" required placeholder="e.g., LCD Screen, Battery"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Part Number</label>
+                            <input type="text" name="part_number" placeholder="Optional"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Quantity *</label>
+                            <input type="number" name="quantity" required min="1" value="1"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Unit Price ($) *</label>
+                            <input type="number" name="unit_price" required min="0" step="0.01" placeholder="0.00"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+
+                        <div class="col-span-2">
+                            <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
+                                Add Material
+                            </button>
                         </div>
                     </div>
-                    <div class="ml-4 flex-1">
-                        <p class="font-semibold text-gray-800">{{ $progress->stage }}</p>
-                        @if($progress->notes)
-                        <p class="text-sm text-gray-600 mt-1">{{ $progress->notes }}</p>
-                        @endif
-                        <p class="text-xs text-gray-500 mt-2">
-                            {{ $progress->created_at->format('M d, Y H:i') }} by {{ $progress->technician->name }}
-                        </p>
-                    </div>
-                </div>
-                @empty
-                <p class="text-gray-500 text-center py-4">No progress updates yet</p>
-                @endforelse
+                </form>
             </div>
+            @endif
 
             <!-- Materials Used -->
+            @if($task->materials->count() > 0)
             <div class="bg-white rounded-lg shadow p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Materials Used</h2>
-
-                @if(!in_array($task->status, ['completed', 'ready_for_collection', 'collected']))
-                <form action="{{ route('technician.task.add-material', $task->id) }}" method="POST" class="mb-6 p-4 bg-gray-50 rounded-lg">
-                    @csrf
-                    <p class="font-semibold text-gray-800 mb-3">Add Material</p>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <input type="text" name="material_name" required placeholder="Material Name"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        </div>
-                        <div>
-                            <input type="text" name="part_number" placeholder="Part Number (Optional)"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        </div>
-                        <div>
-                            <input type="number" name="quantity" required min="1" placeholder="Quantity"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        </div>
-                        <div>
-                            <input type="number" name="unit_price" required min="0" step="0.01" placeholder="Unit Price"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        </div>
-                    </div>
-                    <button type="submit" class="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
-                        Add Material
-                    </button>
-                </form>
-                @endif
-
-                @if($task->materials->isNotEmpty())
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Material</th>
-                                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500">Qty</th>
-                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Unit Price</th>
-                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Total</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part #</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             @foreach($task->materials as $material)
                             <tr>
-                                <td class="px-4 py-3 text-sm">
-                                    <p class="font-medium text-gray-800">{{ $material->material_name }}</p>
-                                    @if($material->part_number)
-                                    <p class="text-xs text-gray-500">{{ $material->part_number }}</p>
-                                    @endif
-                                </td>
-                                <td class="px-4 py-3 text-sm text-center text-gray-800">{{ $material->quantity }}</td>
-                                <td class="px-4 py-3 text-sm text-right text-gray-800">${{ number_format($material->unit_price, 2) }}</td>
-                                <td class="px-4 py-3 text-sm text-right font-semibold text-gray-800">${{ number_format($material->total_price, 2) }}</td>
+                                <td class="px-4 py-3 text-sm">{{ $material->material_name }}</td>
+                                <td class="px-4 py-3 text-sm text-gray-500 font-mono">{{ $material->part_number ?? 'N/A' }}</td>
+                                <td class="px-4 py-3 text-sm text-right">{{ $material->quantity }}</td>
+                                <td class="px-4 py-3 text-sm text-right">${{ number_format($material->unit_price, 2) }}</td>
+                                <td class="px-4 py-3 text-sm font-semibold text-right">${{ number_format($material->total_price, 2) }}</td>
                             </tr>
                             @endforeach
                             <tr class="bg-gray-50 font-bold">
-                                <td colspan="3" class="px-4 py-3 text-sm text-right">Total Materials Cost:</td>
+                                <td colspan="4" class="px-4 py-3 text-sm text-right">Materials Total:</td>
                                 <td class="px-4 py-3 text-sm text-right">${{ number_format($task->materials->sum('total_price'), 2) }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                @else
-                <p class="text-gray-500 text-center py-4">No materials added yet</p>
-                @endif
             </div>
+            @endif
+
+            <!-- Progress Timeline -->
+            @if($task->progress->count() > 0)
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Progress Timeline</h2>
+                <div class="space-y-4">
+                    @foreach($task->progress->sortByDesc('created_at') as $progress)
+                    <div class="border-l-4 border-blue-500 pl-4 py-2">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-semibold text-gray-800">{{ $progress->stage }}</p>
+                                @if($progress->notes)
+                                <p class="text-sm text-gray-600 mt-1">{{ $progress->notes }}</p>
+                                @endif
+
+                                <!-- Progress Images -->
+                                @if($progress->images && count($progress->images) > 0)
+                                <div class="grid grid-cols-3 gap-2 mt-3">
+                                    @foreach($progress->images as $img)
+                                    <img
+                                        src="{{ Storage::url($img) }}"
+                                        alt="Progress image"
+                                        class="w-full h-24 object-cover rounded border cursor-pointer hover:opacity-75"
+                                        onclick="openImageModal('{{ Storage::url($img) }}')"
+                                    >
+                                    @endforeach
+                                </div>
+                                @endif
+                            </div>
+                            <span class="text-xs text-gray-500 whitespace-nowrap ml-4">{{ $progress->created_at->format('M d, H:i') }}</span>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+            @endif
 
             <!-- Complete Task -->
             @if($task->status === 'in_progress' && !$task->invoice)
@@ -276,18 +326,101 @@
                     </div>
                     @endif
                     <div>
-                        <p class="text-gray-500">Type</p>
+                        <p class="text-gray-500">Service Type</p>
                         <p class="font-semibold capitalize">{{ $task->type }}</p>
                     </div>
                     @if($task->problem_description)
                     <div>
-                    <p class="text-gray-500">Problem Description</p>
-                    <p class="text-gray-800 mt-1">{{ $task->problem_description }}</p>
+                        <p class="text-gray-500">Problem Description</p>
+                        <p class="text-gray-800 mt-1">{{ $task->problem_description }}</p>
+                    </div>
+                    @endif
                 </div>
-                @endif
             </div>
+
+            <!-- Task Info -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Task Information</h3>
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <p class="text-gray-500">Created</p>
+                        <p class="font-semibold">{{ $task->created_at->format('M d, Y H:i') }}</p>
+                    </div>
+                    @if($task->assigned_at)
+                    <div>
+                        <p class="text-gray-500">Assigned</p>
+                        <p class="font-semibold">{{ $task->assigned_at->format('M d, Y H:i') }}</p>
+                    </div>
+                    @endif
+                    @if($task->started_at)
+                    <div>
+                        <p class="text-gray-500">Started</p>
+                        <p class="font-semibold">{{ $task->started_at->format('M d, Y H:i') }}</p>
+                    </div>
+                    @endif
+                    <div>
+                        <p class="text-gray-500">Complexity Weight</p>
+                        <p class="font-semibold">{{ $task->complexity_weight }}x</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoice Info (if exists) -->
+            @if($task->invoice)
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Invoice</h3>
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <p class="text-gray-500">Invoice #</p>
+                        <p class="font-mono font-semibold">{{ $task->invoice->invoice_number }}</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-500">Status</p>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                            {{ $task->invoice->status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' }}">
+                            {{ ucfirst($task->invoice->status) }}
+                        </span>
+                    </div>
+                    <div>
+                        <p class="text-gray-500">Total Amount</p>
+                        <p class="text-2xl font-bold text-gray-800">${{ number_format($task->invoice->total, 2) }}</p>
+                    </div>
+                </div>
+            </div>
+            @endif
         </div>
     </div>
 </div>
+
+<!-- Image Modal -->
+<div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4" onclick="closeImageModal()">
+    <div class="relative max-w-4xl max-h-full">
+        <button onclick="closeImageModal()" class="absolute -top-10 right-0 text-white hover:text-gray-300">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+        <img id="modalImage" src="" alt="Full size image" class="max-w-full max-h-screen rounded-lg">
+    </div>
 </div>
+
+<script>
+function openImageModal(imageSrc) {
+    document.getElementById('imageModal').classList.remove('hidden');
+    document.getElementById('modalImage').src = imageSrc;
+    document.body.style.overflow = 'hidden';
+}
+
+function closeImageModal() {
+    document.getElementById('imageModal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeImageModal();
+    }
+});
+</script>
 @endsection
