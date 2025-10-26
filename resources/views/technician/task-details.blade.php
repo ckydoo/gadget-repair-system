@@ -40,47 +40,86 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">
-            <!-- Problem Images from Client -->
-            @if($task->problem_images && count($task->problem_images) > 0)
+            <!-- Device Information -->
             <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">📸 Problem Images (Uploaded by Client)</h2>
-                <p class="text-sm text-gray-600 mb-4">Client provided {{ count($task->problem_images) }} image(s) showing the issue</p>
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Device Information</h2>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <p class="text-gray-500">Device Type</p>
+                        <p class="font-semibold">{{ $task->deviceCategory->name }}</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-500">Brand & Model</p>
+                        <p class="font-semibold">{{ $task->device_brand }} {{ $task->device_model }}</p>
+                    </div>
+                    <div class="col-span-2">
+                        <p class="text-gray-500">Problem Description</p>
+                        <p class="font-semibold">{{ $task->problem_description }}</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-500">Service Type</p>
+                        <p class="font-semibold">{{ ucfirst($task->type) }}</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-500">Warranty</p>
+                        <p class="font-semibold">{{ $task->warranty_days }} days</p>
+                    </div>
+                </div>
+            </div>
 
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    @foreach($task->problem_images as $index => $image)
-                    <div class="relative group">
-                        <img
-                            src="{{ Storage::url($image) }}"
-                            alt="Problem Image {{ $index + 1 }}"
-                            class="w-full h-48 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-blue-500 transition"
-                            onclick="openImageModal('{{ Storage::url($image) }}')"
-                        >
-                        <div class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
-                            Image {{ $index + 1 }}
+            <!-- Progress Updates -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Progress Timeline</h2>
+
+                @if($task->progress->count() > 0)
+                <div class="space-y-4">
+                    @foreach($task->progress->sortByDesc('created_at') as $progress)
+                    <div class="border-l-4 border-blue-500 pl-4 py-2">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-gray-800">{{ $progress->stage }}</h3>
+                                @if($progress->notes)
+                                <p class="text-sm text-gray-600 mt-1">{{ $progress->notes }}</p>
+                                @endif
+                                <p class="text-xs text-gray-400 mt-1">
+                                    By {{ $progress->technician->name }} • {{ $progress->created_at->format('M d, Y H:i') }}
+                                </p>
+                            </div>
                         </div>
-                        <!-- Download button -->
-                        <a
-                            href="{{ Storage::url($image) }}"
-                            download
-                            class="absolute top-2 right-2 bg-blue-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition"
-                            title="Download image"
-                        >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                            </svg>
-                        </a>
+
+                        @if($progress->images && count($progress->images) > 0)
+                        <div class="mt-3 grid grid-cols-3 gap-2">
+                            @foreach($progress->images as $image)
+                            <div class="relative group">
+                                <img src="{{ asset('storage/' . $image) }}"
+                                     alt="Progress image"
+                                     class="w-full h-24 object-cover rounded cursor-pointer hover:opacity-75 transition"
+                                     onclick="window.open('{{ asset('storage/' . $image) }}', '_blank')">
+                                <a href="{{ asset('storage/' . $image) }}"
+                                    download
+                                    class="absolute top-2 right-2 bg-blue-600 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition"
+                                    title="Download image"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                </a>
+                            </div>
+                            @endforeach
+                        </div>
+                        @endif
                     </div>
                     @endforeach
                 </div>
-
-                <p class="text-xs text-gray-500 mt-3">💡 Click on any image to view full size</p>
+                @else
+                <p class="text-gray-500 text-center py-4">No progress updates yet</p>
+                @endif
             </div>
-            @endif
 
-            <!-- Quick Actions -->
-            @if(!in_array($task->status, ['completed', 'ready_for_collection', 'collected']))
+            <!-- Quick Status Change -->
+            @if(!in_array($task->status, ['ready_for_collection', 'collected']))
             <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Quick Status Update</h2>
 
                 <form action="{{ route('technician.task.update-status', $task->id) }}" method="POST" class="flex gap-3">
                     @csrf
@@ -89,6 +128,7 @@
                         <option value="checked_in" {{ $task->status === 'checked_in' ? 'selected' : '' }}>Checked In</option>
                         <option value="in_progress" {{ $task->status === 'in_progress' ? 'selected' : '' }}>In Progress</option>
                         <option value="waiting_parts" {{ $task->status === 'waiting_parts' ? 'selected' : '' }}>Waiting for Parts</option>
+                        <option value="completed" {{ $task->status === 'completed' ? 'selected' : '' }}>Completed</option>
                     </select>
                     <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
                         Update Status
@@ -98,7 +138,7 @@
             @endif
 
             <!-- Add Progress Update -->
-            @if(!in_array($task->status, ['completed', 'ready_for_collection', 'collected']))
+            @if(!in_array($task->status, ['ready_for_collection', 'collected']))
             <div class="bg-white rounded-lg shadow p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Add Progress Update</h2>
 
@@ -118,10 +158,10 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Progress Images (Optional)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Images (Optional)</label>
                             <input type="file" name="images[]" multiple accept="image/*"
-                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg">
-                            <p class="text-xs text-gray-500 mt-1">You can upload multiple images to show your work progress</p>
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">Maximum 5 images, 5MB each</p>
                         </div>
 
                         <button type="submit" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
@@ -133,15 +173,15 @@
             @endif
 
             <!-- Add Material -->
-            @if(!in_array($task->status, ['completed', 'ready_for_collection', 'collected']))
+            @if(!in_array($task->status, ['ready_for_collection', 'collected']))
             <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Add Material/Part Used</h2>
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Add Material Used</h2>
 
                 <form action="{{ route('technician.task.add-material', $task->id) }}" method="POST">
                     @csrf
                     <div class="grid grid-cols-2 gap-4">
                         <div class="col-span-2">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Material Name *</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Material/Part Name *</label>
                             <input type="text" name="material_name" required placeholder="e.g., LCD Screen, Battery"
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                         </div>
@@ -193,14 +233,14 @@
                             @foreach($task->materials as $material)
                             <tr>
                                 <td class="px-4 py-3 text-sm">{{ $material->material_name }}</td>
-                                <td class="px-4 py-3 text-sm text-gray-500 font-mono">{{ $material->part_number ?? 'N/A' }}</td>
+                                <td class="px-4 py-3 text-sm text-gray-500 font-mono">{{ $material->part_number ?? '-' }}</td>
                                 <td class="px-4 py-3 text-sm text-right">{{ $material->quantity }}</td>
                                 <td class="px-4 py-3 text-sm text-right">${{ number_format($material->unit_price, 2) }}</td>
-                                <td class="px-4 py-3 text-sm font-semibold text-right">${{ number_format($material->total_price, 2) }}</td>
+                                <td class="px-4 py-3 text-sm text-right font-semibold">${{ number_format($material->total_price, 2) }}</td>
                             </tr>
                             @endforeach
                             <tr class="bg-gray-50 font-bold">
-                                <td colspan="4" class="px-4 py-3 text-sm text-right">Materials Total:</td>
+                                <td colspan="4" class="px-4 py-3 text-sm text-right">Total Materials Cost:</td>
                                 <td class="px-4 py-3 text-sm text-right">${{ number_format($task->materials->sum('total_price'), 2) }}</td>
                             </tr>
                         </tbody>
@@ -209,46 +249,11 @@
             </div>
             @endif
 
-            <!-- Progress Timeline -->
-            @if($task->progress->count() > 0)
-            <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Progress Timeline</h2>
-                <div class="space-y-4">
-                    @foreach($task->progress->sortByDesc('created_at') as $progress)
-                    <div class="border-l-4 border-blue-500 pl-4 py-2">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-semibold text-gray-800">{{ $progress->stage }}</p>
-                                @if($progress->notes)
-                                <p class="text-sm text-gray-600 mt-1">{{ $progress->notes }}</p>
-                                @endif
-
-                                <!-- Progress Images -->
-                                @if($progress->images && count($progress->images) > 0)
-                                <div class="grid grid-cols-3 gap-2 mt-3">
-                                    @foreach($progress->images as $img)
-                                    <img
-                                        src="{{ Storage::url($img) }}"
-                                        alt="Progress image"
-                                        class="w-full h-24 object-cover rounded border cursor-pointer hover:opacity-75"
-                                        onclick="openImageModal('{{ Storage::url($img) }}')"
-                                    >
-                                    @endforeach
-                                </div>
-                                @endif
-                            </div>
-                            <span class="text-xs text-gray-500 whitespace-nowrap ml-4">{{ $progress->created_at->format('M d, H:i') }}</span>
-                        </div>
-                    </div>
-                    @endforeach
-                </div>
-            </div>
-            @endif
-
-            <!-- Complete Task -->
-            @if($task->status === 'in_progress' && !$task->invoice)
+            <!-- Complete Task & Generate Invoice -->
+            @if($task->status === 'in_progress' || $task->status === 'waiting_parts')
             <div class="bg-green-50 border-2 border-green-300 rounded-lg p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Complete Task</h2>
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Complete Task & Generate Invoice</h2>
+                <p class="text-gray-600 mb-4">Ready to complete this task? Enter your labour hours to generate the final invoice.</p>
 
                 <form action="{{ route('technician.task.complete', $task->id) }}" method="POST">
                     @csrf
@@ -267,18 +272,34 @@
                         </div>
 
                         <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold text-lg">
-                            Mark as Completed & Generate Invoice
+                            Complete Task & Generate Invoice
                         </button>
                     </div>
                 </form>
             </div>
             @endif
 
-            <!-- Mark Ready for Collection -->
-            @if($task->status === 'completed' && $task->invoice && $task->invoice->status === 'paid')
+            <!-- Mark Ready for Collection - MODIFIED: No payment requirement -->
+            @if($task->status === 'completed')
             <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">Mark Ready for Collection</h2>
-                <p class="text-gray-600 mb-4">Invoice has been paid. Mark this device as ready for customer pickup.</p>
+                <p class="text-gray-600 mb-4">Mark this device as ready for customer pickup.</p>
+
+                @if($task->invoice)
+                    @if($task->invoice->status === 'paid')
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                        ✓ Invoice has been paid - Ready to release
+                    </div>
+                    @else
+                    <div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
+                        ⚠ Invoice is not paid yet - Payment will be collected at pickup
+                    </div>
+                    @endif
+                @else
+                <div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
+                    ⚠ No invoice generated yet - Will need to be created before collection
+                </div>
+                @endif
 
                 <form action="{{ route('technician.task.mark-ready', $task->id) }}" method="POST">
                     @csrf
@@ -313,39 +334,8 @@
 
             <!-- Device Information -->
             <div class="bg-white rounded-lg shadow p-6">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Device Information</h3>
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Task Timeline</h3>
                 <div class="space-y-3 text-sm">
-                    <div>
-                        <p class="text-gray-500">Category</p>
-                        <p class="font-semibold">{{ $task->deviceCategory->name }}</p>
-                    </div>
-                    @if($task->device_brand)
-                    <div>
-                        <p class="text-gray-500">Brand & Model</p>
-                        <p class="font-semibold">{{ $task->device_brand }} {{ $task->device_model }}</p>
-                    </div>
-                    @endif
-                    <div>
-                        <p class="text-gray-500">Service Type</p>
-                        <p class="font-semibold capitalize">{{ $task->type }}</p>
-                    </div>
-                    @if($task->problem_description)
-                    <div>
-                        <p class="text-gray-500">Problem Description</p>
-                        <p class="text-gray-800 mt-1">{{ $task->problem_description }}</p>
-                    </div>
-                    @endif
-                </div>
-            </div>
-
-            <!-- Task Info -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Task Information</h3>
-                <div class="space-y-3 text-sm">
-                    <div>
-                        <p class="text-gray-500">Created</p>
-                        <p class="font-semibold">{{ $task->created_at->format('M d, Y H:i') }}</p>
-                    </div>
                     @if($task->assigned_at)
                     <div>
                         <p class="text-gray-500">Assigned</p>
@@ -356,6 +346,12 @@
                     <div>
                         <p class="text-gray-500">Started</p>
                         <p class="font-semibold">{{ $task->started_at->format('M d, Y H:i') }}</p>
+                    </div>
+                    @endif
+                    @if($task->completed_at)
+                    <div>
+                        <p class="text-gray-500">Completed</p>
+                        <p class="font-semibold">{{ $task->completed_at->format('M d, Y H:i') }}</p>
                     </div>
                     @endif
                     <div>
@@ -383,7 +379,29 @@
                     </div>
                     <div>
                         <p class="text-gray-500">Total Amount</p>
-                        <p class="text-2xl font-bold text-gray-800">${{ number_format($task->invoice->total, 2) }}</p>
+                        <p class="font-bold text-lg">${{ number_format($task->invoice->total, 2) }}</p>
+                    </div>
+                    <div class="pt-2 border-t">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-500">Materials:</span>
+                            <span>${{ number_format($task->invoice->materials_cost, 2) }}</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-500">Labour:</span>
+                            <span>${{ number_format($task->invoice->labour_cost, 2) }}</span>
+                        </div>
+                        @if($task->invoice->transport_cost > 0)
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-500">Transport:</span>
+                            <span>${{ number_format($task->invoice->transport_cost, 2) }}</span>
+                        </div>
+                        @endif
+                        @if($task->invoice->diagnostic_fee > 0)
+                        <div class="flex justify-between text-xs">
+                            <span class="text-gray-500">Diagnostic:</span>
+                            <span>${{ number_format($task->invoice->diagnostic_fee, 2) }}</span>
+                        </div>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -391,36 +409,4 @@
         </div>
     </div>
 </div>
-
-<!-- Image Modal -->
-<div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4" onclick="closeImageModal()">
-    <div class="relative max-w-4xl max-h-full">
-        <button onclick="closeImageModal()" class="absolute -top-10 right-0 text-white hover:text-gray-300">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-        </button>
-        <img id="modalImage" src="" alt="Full size image" class="max-w-full max-h-screen rounded-lg">
-    </div>
-</div>
-
-<script>
-function openImageModal(imageSrc) {
-    document.getElementById('imageModal').classList.remove('hidden');
-    document.getElementById('modalImage').src = imageSrc;
-    document.body.style.overflow = 'hidden';
-}
-
-function closeImageModal() {
-    document.getElementById('imageModal').classList.add('hidden');
-    document.body.style.overflow = 'auto';
-}
-
-// Close modal with Escape key
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') {
-        closeImageModal();
-    }
-});
-</script>
 @endsection

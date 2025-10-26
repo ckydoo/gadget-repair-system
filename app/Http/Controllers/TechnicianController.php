@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Task;
+use App\Models\Invoice;
 use App\Models\JobProgress;
 use App\Models\MaterialUsed;
-use App\Models\Invoice;
-use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Storage;
 
 class TechnicianController extends Controller
@@ -20,6 +21,123 @@ class TechnicianController extends Controller
         $this->notificationService = $notificationService;
     }
 
+    /**
+     * Mark task as ready for collection - UPDATED VERSION
+     * Now allows marking ready even if invoice is unpaid (with warnings)
+     */
+    public function markReady(Request $request, $taskId)
+    {
+        $task = Task::with(['invoice', 'deviceCategory', 'user'])
+            ->where('technician_id', auth()->id())
+            ->findOrFail($taskId);
+
+        // Verify task is completed
+        if ($task->status !== 'completed') {
+            return back()->with('error', 'Task must be completed before marking as ready for collection.');
+        }
+
+        // Verify invoice exists
+        if (!$task->invoice) {
+            return back()->with('error', 'Invoice must be generated before marking as ready for collection.');
+        }
+
+        $isUnpaid = $task->invoice->status !== 'paid';
+        $markUnpaid = $request->has('mark_unpaid') && $request->mark_unpaid == '1';
+
+        DB::beginTransaction();
+        try {
+            // Update task status
+            $task->update([
+                'status' => 'ready_for_collection',
+                'ready_at' => now(),
+                'warranty_expires_at' => now()->addDays($task->warranty_days ?? 30),
+            ]);
+
+            // Create storage fee record
+            $category = $task->deviceCategory;
+            \App\Models\StorageFee::create([
+                'task_id' => $task->id,
+                'days_stored' => 0,
+                'daily_rate' => $category ? $category->getStorageFeeRate() : 2.00,
+                'total_fee' => 0,
+            ]);
+
+            // Add progress note
+            JobProgress::create([
+                'task_id' => $task->id,
+                'technician_id' => auth()->id(),
+                'stage' => 'Ready for Collection',
+                'notes' => $isUnpaid
+                    ? "Device marked as ready for collection. ⚠️ WARNING: Invoice #{$task->invoice->invoice_number} is UNPAID (Status: {$task->invoice->status}, Amount: $" . number_format($task->invoice->total, 2) . "). Payment must be collected at pickup."
+                    : "Device marked as ready for collection. Invoice #{$task->invoice->invoice_number} has been paid.",
+            ]);
+
+            // Notify client that device is ready
+            $this->notificationService->notifyClientDeviceReady($task);
+
+            // If unpaid, notify front desk staff about payment collection
+            if ($isUnpaid) {
+                $this->notifyFrontDeskUnpaidCollection($task);
+
+                // Log the unpaid ready marking
+                Log::warning('Device marked ready with unpaid invoice', [
+                    'task_id' => $task->id,
+                    'task_code' => $task->task_id,
+                    'invoice_id' => $task->invoice->id,
+                    'invoice_number' => $task->invoice->invoice_number,
+                    'invoice_status' => $task->invoice->status,
+                    'invoice_total' => $task->invoice->total,
+                    'technician_id' => auth()->id(),
+                    'technician_name' => auth()->user()->name,
+                    'marked_by_technician' => true,
+                ]);
+            }
+
+            DB::commit();
+
+            $message = $isUnpaid
+                ? "Task marked as ready for collection! ⚠️ Note: Invoice is unpaid - front desk must collect payment during pickup."
+                : "Task marked as ready for collection! Customer has been notified.";
+
+            return back()->with('success', $message);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to mark task as ready', [
+                'task_id' => $task->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return back()->with('error', 'Failed to mark as ready: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify front desk staff about unpaid device ready for collection
+     */
+    protected function notifyFrontDeskUnpaidCollection(Task $task)
+    {
+        // Get all front desk users
+        $frontDeskUsers = \App\Models\User::role('frontdesk')->get();
+
+        foreach ($frontDeskUsers as $frontDesk) {
+            \App\Models\Notification::create([
+                'user_id' => $frontDesk->id,
+                'type' => 'unpaid_collection',
+                'title' => '⚠️ Unpaid Device Ready for Collection',
+                'message' => "Task {$task->task_id} ({$task->device_brand} {$task->device_model}) is ready for collection but invoice #{$task->invoice->invoice_number} is UNPAID. Amount due: $" . number_format($task->invoice->total, 2) . ". Please collect payment during pickup.",
+                'data' => [
+                    'task_id' => $task->id,
+                    'task_code' => $task->task_id,
+                    'invoice_id' => $task->invoice->id,
+                    'invoice_number' => $task->invoice->invoice_number,
+                    'amount_due' => $task->invoice->total,
+                    'customer_name' => $task->user->name,
+                    'customer_phone' => $task->user->phone,
+                ],
+            ]);
+        }
+    }
     /**
      * Show technician dashboard
      */
@@ -274,40 +392,5 @@ class TechnicianController extends Controller
         }
     }
 
-    /**
-     * Mark task as ready for collection
-     */
-    public function markReady($taskId)
-    {
-        $task = Task::where('technician_id', auth()->id())->findOrFail($taskId);
 
-        DB::beginTransaction();
-        try {
-            $task->update([
-                'status' => 'ready_for_collection',
-                'ready_at' => now(),
-                'warranty_expires_at' => now()->addDays($task->warranty_days),
-            ]);
-
-            // Create storage fee record
-            $category = $task->deviceCategory;
-            \App\Models\StorageFee::create([
-                'task_id' => $task->id,
-                'days_stored' => 0,
-                'daily_rate' => $category->getStorageFeeRate(),
-                'total_fee' => 0,
-            ]);
-
-            // Notify client
-            $this->notificationService->notifyClientDeviceReady($task);
-
-            DB::commit();
-
-            return back()->with('success', 'Task marked as ready for collection!');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', 'Failed to mark as ready: ' . $e->getMessage());
-        }
-    }
 }

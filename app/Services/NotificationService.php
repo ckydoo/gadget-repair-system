@@ -110,22 +110,6 @@ class NotificationService
         ]);
     }
 
-    /**
-     * Notify client that device is ready for collection
-     */
-    public function notifyClientDeviceReady(Task $task)
-    {
-        Notification::create([
-            'user_id' => $task->user_id,
-            'type' => 'device_ready',
-            'title' => 'Device Ready for Collection',
-            'message' => "Great news! Your {$task->device_brand} {$task->device_model} is ready for collection. Task ID: {$task->task_id}",
-            'data' => [
-                'task_id' => $task->id,
-                'task_code' => $task->task_id,
-            ],
-        ]);
-    }
 
     /**
      * Notify supervisor to review job complexity
@@ -181,5 +165,92 @@ class NotificationService
                 'is_read' => true,
                 'read_at' => now(),
             ]);
+    }
+
+
+
+    /**
+     * Notify client that device is ready for collection
+     * UPDATED: Now includes payment status information
+     */
+    public function notifyClientDeviceReady(Task $task)
+    {
+        $task->load(['invoice', 'deviceCategory']);
+
+        $paymentStatus = $task->invoice && $task->invoice->status === 'paid'
+            ? 'Invoice has been paid.'
+            : '⚠️ Please bring payment ($' . number_format($task->invoice->total, 2) . ') when collecting your device.';
+
+        Notification::create([
+            'user_id' => $task->user_id,
+            'type' => 'device_ready',
+            'title' => '🎉 Device Ready for Collection',
+            'message' => "Great news! Your {$task->device_brand} {$task->device_model} is ready for collection. Task ID: {$task->task_id}. {$paymentStatus}",
+            'data' => [
+                'task_id' => $task->id,
+                'task_code' => $task->task_id,
+                'invoice_status' => $task->invoice ? $task->invoice->status : null,
+                'amount_due' => $task->invoice && $task->invoice->status !== 'paid' ? $task->invoice->total : 0,
+            ],
+        ]);
+
+        // If there's an unpaid invoice, also send a reminder about payment
+        if ($task->invoice && $task->invoice->status !== 'paid') {
+            $this->sendPaymentReminderNotification($task);
+        }
+    }
+
+    /**
+     * Send payment reminder notification to client
+     */
+    protected function sendPaymentReminderNotification(Task $task)
+    {
+        Notification::create([
+            'user_id' => $task->user_id,
+            'type' => 'payment_reminder',
+            'title' => '💳 Payment Required for Collection',
+            'message' => "Your device (Task {$task->task_id}) is ready! Please bring payment of $" . number_format($task->invoice->total, 2) . " when collecting your {$task->device_brand} {$task->device_model}. Invoice #: {$task->invoice->invoice_number}",
+            'data' => [
+                'task_id' => $task->id,
+                'task_code' => $task->task_id,
+                'invoice_id' => $task->invoice->id,
+                'invoice_number' => $task->invoice->invoice_number,
+                'amount_due' => $task->invoice->total,
+            ],
+        ]);
+    }
+
+    /**
+     * Notify front desk about unpaid device collection
+     * NEW METHOD
+     */
+    public function notifyFrontDeskUnpaidCollection(Task $task)
+    {
+        $frontDeskUsers = User::role('frontdesk')->get();
+
+        foreach ($frontDeskUsers as $frontDesk) {
+            Notification::create([
+                'user_id' => $frontDesk->id,
+                'type' => 'unpaid_collection_alert',
+                'title' => '⚠️ Collect Payment on Pickup',
+                'message' => "Device ready for collection with UNPAID invoice. Customer: {$task->user->name}. Task: {$task->task_id}. Amount: $" . number_format($task->invoice->total, 2) . ". Invoice #: {$task->invoice->invoice_number}",
+                'data' => [
+                    'task_id' => $task->id,
+                    'task_code' => $task->task_id,
+                    'invoice_id' => $task->invoice->id,
+                    'invoice_number' => $task->invoice->invoice_number,
+                    'amount_due' => $task->invoice->total,
+                    'customer_name' => $task->user->name,
+                    'customer_phone' => $task->user->phone,
+                    'device' => $task->device_brand . ' ' . $task->device_model,
+                ],
+            ]);
+        }
+
+        Log::info('Front desk notified about unpaid collection', [
+            'task_id' => $task->id,
+            'invoice_number' => $task->invoice->invoice_number,
+            'amount' => $task->invoice->total,
+        ]);
     }
 }

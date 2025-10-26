@@ -54,7 +54,7 @@ Route::middleware(['auth'])->prefix('frontdesk')->name('frontdesk.')->group(func
 
     // Walk-in registration
     Route::get('/walkin', [FrontDeskController::class, 'showWalkinForm'])->name('walkin');
-    Route::post('/walkin', [FrontDeskController::class, 'registerWalkin'])->name('walkin.create');
+    Route::post('/walkin', [FrontDeskController::class, 'registerWalkin'])->name('walkin.register');
 
     // Device collection/checkout - NEW ROUTES
     Route::get('/collection', [FrontDeskController::class, 'collectionForm'])->name('collection');
