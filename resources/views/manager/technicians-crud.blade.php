@@ -135,23 +135,32 @@
                         </td>
                         <td class="px-6 py-4">
                             <div class="flex flex-wrap gap-1">
-                                @foreach($tech->technician->deviceCategories as $category)
+                                @php
+                                    // Get device categories from the specializations JSON
+                                    $deviceCategories = $tech->technician && $tech->technician->specializations
+                                        ? \App\Models\DeviceCategory::whereIn('id', $tech->technician->specializations)->get()
+                                        : collect([]);
+                                @endphp
+                                @forelse($deviceCategories as $category)
                                 <span class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
                                     {{ $category->name }}
                                 </span>
-                                @endforeach
+                                @empty
+                                <span class="text-xs text-gray-400 italic">No specializations</span>
+                                @endforelse
                             </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="text-sm font-semibold text-gray-900">${{ number_format($tech->technician->hourly_rate, 2) }}</span>
+                            <span class="text-sm font-semibold text-gray-900">${{ number_format($tech->technician->hourly_rate ?? 0, 2) }}</span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center">
                             <div class="flex flex-col items-center">
-                                <span class="text-sm font-bold text-gray-900">{{ $tech->active_tasks_count }} / {{ $tech->technician->max_workload }}</span>
+                                <span class="text-sm font-bold text-gray-900">{{ $tech->active_tasks_count }} / {{ $tech->technician->max_workload ?? 10 }}</span>
                                 <div class="w-full bg-gray-200 rounded-full h-2 mt-1" style="max-width: 80px;">
                                     @php
-                                        $percentage = $tech->technician->max_workload > 0
-                                            ? min(100, ($tech->active_tasks_count / $tech->technician->max_workload) * 100)
+                                        $maxWorkload = $tech->technician->max_workload ?? 10;
+                                        $percentage = $maxWorkload > 0
+                                            ? min(100, ($tech->active_tasks_count / $maxWorkload) * 100)
                                             : 0;
                                         $color = $percentage >= 90 ? 'bg-red-600' : ($percentage >= 70 ? 'bg-yellow-500' : 'bg-green-600');
                                     @endphp
@@ -160,7 +169,7 @@
                             </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center">
-                            @if($tech->technician->is_available)
+                            @if($tech->technician && $tech->technician->is_available)
                             <span class="px-3 py-1 text-xs font-bold bg-green-100 text-green-800 rounded-full">Available</span>
                             @else
                             <span class="px-3 py-1 text-xs font-bold bg-red-100 text-red-800 rounded-full">Unavailable</span>
@@ -207,7 +216,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
                             </svg>
                             <p class="text-gray-500 text-lg font-semibold">No technicians found</p>
-                            <p class="text-gray-400 text-sm mt-2">Get started by adding your first technician</p>
+                            <p class="text-gray-400 text-sm mt-2">Start by adding your first technician using the form above.</p>
                             <a href="{{ route('manager.technicians.create') }}"
                                class="inline-block mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition">
                                 Add Technician

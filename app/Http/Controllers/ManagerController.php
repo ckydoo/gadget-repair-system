@@ -296,24 +296,26 @@ $availableTechnicians = User::role('technician')->count();
         ));
     }
 
+/**
+ * Display list of all technicians
+ */
+public function technicians()
+{
+    $technicians = User::role('technician')
+        ->with('technician')
+        ->withCount([
+            'assignedTasks',
+            'assignedTasks as active_tasks_count' => function($query) {
+                $query->whereIn('status', ['assigned', 'checked_in', 'in_progress', 'waiting_parts']);
+            },
+            'assignedTasks as completed_tasks_count' => function($query) {
+                $query->where('status', 'completed');
+            }
+        ])
+        ->paginate(15);
 
-    public function technicians()
-    {
-        $technicians = User::role('technician')
-            ->with(['technician', 'technician.deviceCategoryRelations']) // Use the new relationship
-            ->withCount([
-                'assignedTasks',
-                'assignedTasks as active_tasks_count' => function($query) {
-                    $query->whereIn('status', ['assigned', 'checked_in', 'in_progress', 'waiting_parts']);
-                },
-                'assignedTasks as completed_tasks_count' => function($query) {
-                    $query->where('status', 'completed');
-                }
-            ])
-            ->paginate(15);
-
-        return view('manager.technicians-crud', compact('technicians'));
-    }
+    return view('manager.technicians-crud', compact('technicians'));
+}
 
 /**
  * Show form to create new technician

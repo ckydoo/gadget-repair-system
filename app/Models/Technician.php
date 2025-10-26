@@ -141,8 +141,4 @@ class Technician extends Model
                     ->whereRaw('(SELECT COUNT(*) FROM tasks WHERE technician_id = technicians.user_id AND status IN ("assigned", "checked_in", "in_progress", "waiting_parts")) < max_workload');
     }
 
-    public function deviceCategoryRelations()
-{
-    return $this->belongsToMany(DeviceCategory::class, 'technician_specializations', 'technician_id', 'device_category_id');
-}
 }
