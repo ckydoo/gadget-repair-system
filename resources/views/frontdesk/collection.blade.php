@@ -290,28 +290,35 @@ function loadDevice(taskId) {
 function displayDeviceDetails(data) {
     const task = data.task;
     const requiresPayment = data.requires_payment;
-    const storageFee = data.storage_fee || 0;
-    const invoiceAmount = data.invoice_amount || 0;
-    const totalDue = data.total_amount_due || 0;
+
+    // Convert to numbers with fallback to 0
+    const storageFee = parseFloat(data.storage_fee) || 0;
+    const invoiceAmount = parseFloat(data.invoice_amount) || 0;
+    const totalDue = parseFloat(data.total_amount_due) || 0;
+
+    // Safe access with fallbacks
+    const customerName = task.user?.name || task.user_name || 'N/A';
+    const categoryName = task.device_category?.name || task.category_name || 'N/A';
+    const technicianName = task.technician?.name || task.technician_name || 'N/A';
 
     // Display device information
     const deviceInfoHtml = `
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
             <div>
                 <span class="text-gray-600 text-sm">Task ID:</span>
-                <span class="ml-2 font-mono font-bold">${task.task_id}</span>
+                <span class="ml-2 font-mono font-bold">${task.task_id || 'N/A'}</span>
             </div>
             <div>
                 <span class="text-gray-600 text-sm">Customer:</span>
-                <span class="ml-2 font-semibold">${task.user.name}</span>
+                <span class="ml-2 font-semibold">${customerName}</span>
             </div>
             <div>
                 <span class="text-gray-600 text-sm">Device:</span>
-                <span class="ml-2">${task.device_brand} ${task.device_model}</span>
+                <span class="ml-2">${task.device_brand || ''} ${task.device_model || ''}</span>
             </div>
             <div>
                 <span class="text-gray-600 text-sm">Category:</span>
-                <span class="ml-2">${task.device_category.name}</span>
+                <span class="ml-2">${categoryName}</span>
             </div>
             <div>
                 <span class="text-gray-600 text-sm">Problem:</span>
@@ -319,7 +326,7 @@ function displayDeviceDetails(data) {
             </div>
             <div>
                 <span class="text-gray-600 text-sm">Technician:</span>
-                <span class="ml-2">${task.technician ? task.technician.name : 'N/A'}</span>
+                <span class="ml-2">${technicianName}</span>
             </div>
         </div>
     `;

@@ -118,7 +118,7 @@ class TechnicianController extends Controller
     protected function notifyFrontDeskUnpaidCollection(Task $task)
     {
         // Get all front desk users
-        $frontDeskUsers = \App\Models\User::role('frontdesk')->get();
+        $frontDeskUsers = \App\Models\User::role('front_desk')->get();
 
         foreach ($frontDeskUsers as $frontDesk) {
             \App\Models\Notification::create([
@@ -132,6 +132,30 @@ class TechnicianController extends Controller
                     'invoice_id' => $task->invoice->id,
                     'invoice_number' => $task->invoice->invoice_number,
                     'amount_due' => $task->invoice->total,
+                    'customer_name' => $task->user->name,
+                    'customer_phone' => $task->user->phone,
+                ],
+            ]);
+        }
+    }
+
+    protected function notifyClientDeviceCollected(Task $task)
+    {
+        // Get all front desk users
+        $frontDeskUsers = \App\Models\User::role('front_desk')->get();
+
+        foreach ($frontDeskUsers as $frontDesk) {
+            \App\Models\Notification::create([
+                'user_id' => $frontDesk->id,
+                'type' => 'paid_collection',
+                'title' => '⚠️ paid Device Ready for Collection',
+                'message' => "Task {$task->task_id} ({$task->device_brand} {$task->device_model}) is ready for collection but invoice #{$task->invoice->invoice_number} is UNPAID. Amount due: $" . number_format($task->invoice->total, 2) . ". Please collect payment during pickup.",
+                'data' => [
+                    'task_id' => $task->id,
+                    'task_code' => $task->task_id,
+                    'invoice_id' => $task->invoice->id,
+                    'invoice_number' => $task->invoice->invoice_number,
+                    'amount' => $task->invoice->total,
                     'customer_name' => $task->user->name,
                     'customer_phone' => $task->user->phone,
                 ],

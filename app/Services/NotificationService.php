@@ -2,9 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\Notification;
 use App\Models\Task;
 use App\Models\User;
+use App\Models\Notification;
+use Illuminate\Support\Facades\Log;
 
 class NotificationService
 {
@@ -226,7 +227,7 @@ class NotificationService
      */
     public function notifyFrontDeskUnpaidCollection(Task $task)
     {
-        $frontDeskUsers = User::role('frontdesk')->get();
+        $frontDeskUsers = User::role('front_desk')->get();
 
         foreach ($frontDeskUsers as $frontDesk) {
             Notification::create([
@@ -248,6 +249,36 @@ class NotificationService
         }
 
         Log::info('Front desk notified about unpaid collection', [
+            'task_id' => $task->id,
+            'invoice_number' => $task->invoice->invoice_number,
+            'amount' => $task->invoice->total,
+        ]);
+    }
+
+    public function notifyClientDeviceCollected(Task $task)
+    {
+        $frontDeskUsers = User::role('front_desk')->get();
+
+        foreach ($frontDeskUsers as $frontDesk) {
+            Notification::create([
+                'user_id' => $frontDesk->id,
+                'type' => 'paid_collection_alert',
+                'title' => '⚠️ Collect Payment on Pickup',
+                'message' => "Device ready for collection with paid invoice. Customer: {$task->user->name}. Task: {$task->task_id}. Amount: $" . number_format($task->invoice->total, 2) . ". Invoice #: {$task->invoice->invoice_number}",
+                'data' => [
+                    'task_id' => $task->id,
+                    'task_code' => $task->task_id,
+                    'invoice_id' => $task->invoice->id,
+                    'invoice_number' => $task->invoice->invoice_number,
+                    'amount' => $task->invoice->total,
+                    'customer_name' => $task->user->name,
+                    'customer_phone' => $task->user->phone,
+                    'device' => $task->device_brand . ' ' . $task->device_model,
+                ],
+            ]);
+        }
+
+        Log::info('Front desk notified about device collection', [
             'task_id' => $task->id,
             'invoice_number' => $task->invoice->invoice_number,
             'amount' => $task->invoice->total,
