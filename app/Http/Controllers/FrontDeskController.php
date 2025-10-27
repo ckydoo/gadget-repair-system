@@ -4,15 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Task;
 use App\Models\User;
-use App\Models\DeviceCategory;
 use App\Models\Booking;
 use App\Models\Invoice;
 use App\Models\StorageFee;
-use App\Services\TaskAssignmentService;
-use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use App\Models\DeviceCategory;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Hash;
+use App\Services\NotificationService;
+use App\Services\TaskAssignmentService;
 
 class FrontDeskController extends Controller
 {
@@ -286,119 +287,9 @@ class FrontDeskController extends Controller
         ]);
     }
 
-    /**
-     * Process device collection (checkout)
-     */
-    public function processCollection(Request $request, $taskId)
-    {
-        $request->validate([
-            'collected_by' => 'required|string|max:255',
-            'id_type' => 'required|string|max:50',
-            'id_number' => 'required|string|max:50',
-            'storage_fee_paid' => 'nullable|boolean',
-        ]);
 
-        $task = Task::with(['user', 'invoice', 'storageFee'])->findOrFail($taskId);
 
-        // Verify task is ready for collection
-        if ($task->status !== 'ready_for_collection') {
-            return back()->with('error', 'This device is not ready for collection.');
-        }
 
-        // Verify invoice is paid
-        if (!$task->invoice || $task->invoice->status !== 'paid') {
-            return back()->with('error', 'Invoice must be paid before device can be collected.');
-        }
-
-        DB::beginTransaction();
-        try {
-            // Check if there are storage fees
-            if ($task->storageFee && $task->storageFee->total_fee > 0) {
-                if (!$request->storage_fee_paid) {
-                    return back()->with('error', 'Storage fee must be paid before collection.');
-                }
-
-                // Mark storage fee as paid
-                $task->storageFee->update([
-                    'paid_at' => now(),
-                ]);
-            }
-
-            // Update task to collected
-            $task->update([
-                'status' => 'collected',
-                'collected_at' => now(),
-            ]);
-
-            // Log collection details (you may want to create a separate model for this)
-            // For now, we'll add it to a notes field or create a simple log
-
-            // Send notification to client
-            $this->notificationService->notifyClientDeviceCollected($task);
-
-            DB::commit();
-
-            return redirect()->route('frontdesk.collection-receipt', $task->id)
-                ->with('success', 'Device collected successfully!');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', 'Collection failed: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Show collection receipt
-     */
-    public function collectionReceipt($taskId)
-    {
-        $task = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee', 'technician'])
-            ->findOrFail($taskId);
-
-        return view('frontdesk.collection-receipt', compact('task'));
-    }
-
-    /**
-     * Process invoice payment at front desk
-     */
-    public function processPayment(Request $request, $invoiceId)
-    {
-        $request->validate([
-            'payment_method' => 'required|in:cash,card,mobile_money',
-            'amount_received' => 'required|numeric|min:0',
-        ]);
-
-        $invoice = Invoice::with('task')->findOrFail($invoiceId);
-
-        if ($invoice->status === 'paid') {
-            return back()->with('error', 'This invoice has already been paid.');
-        }
-
-        if ($request->amount_received < $invoice->total) {
-            return back()->with('error', 'Insufficient payment amount.');
-        }
-
-        DB::beginTransaction();
-        try {
-            $invoice->update([
-                'status' => 'paid',
-                'paid_at' => now(),
-                'payment_method' => $request->payment_method,
-            ]);
-
-            // Notify client
-            $this->notificationService->notifyClientPaymentReceived($invoice->task);
-
-            DB::commit();
-
-            $change = $request->amount_received - $invoice->total;
-            return back()->with('success', 'Payment processed successfully! Change: $' . number_format($change, 2));
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', 'Payment processing failed: ' . $e->getMessage());
-        }
-    }
 
     /**
      * Print device label
@@ -451,4 +342,268 @@ class FrontDeskController extends Controller
 
         return view('frontdesk.search-results', compact('tasks'));
     }
+
+
+    /**
+     * Show collection page with ready devices
+     */
+    public function collectionIndex()
+    {
+        // Show devices that are either 'completed' or 'ready_for_collection'
+        $readyDevices = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee', 'technician'])
+            ->whereIn('status', ['completed', 'ready_for_collection'])
+            ->orderByRaw("FIELD(status, 'ready_for_collection', 'completed')")
+            ->orderBy('completed_at', 'asc')
+            ->paginate(20);
+
+        return view('frontdesk.collection', compact('readyDevices'));
+    }
+
+    /**
+     * Search for device by Task ID
+     */
+    public function searchDevice(Request $request)
+    {
+        $request->validate([
+            'task_id' => 'required|string',
+        ]);
+
+        $task = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee', 'technician'])
+            ->where('task_id', $request->task_id)
+            ->first();
+
+        if (!$task) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Task ID not found. Please check and try again.',
+            ], 404);
+        }
+
+        // Allow both 'completed' and 'ready_for_collection' status
+        if (!in_array($task->status, ['completed', 'ready_for_collection'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This device is not ready for collection yet. Current status: ' . ucfirst(str_replace('_', ' ', $task->status)),
+            ], 400);
+        }
+
+        // Check invoice status - allow unpaid but flag for payment
+        $requiresPayment = !$task->invoice || $task->invoice->status !== 'paid';
+        $invoiceAmount = $task->invoice ? $task->invoice->total : 0;
+
+        // Calculate storage fees if applicable
+        $storageFee = 0;
+        if ($task->storageFee) {
+            $task->storageFee->calculateFee();
+            $storageFee = $task->storageFee->total_fee;
+        }
+
+        return response()->json([
+            'success' => true,
+            'task' => $task,
+            'requires_payment' => $requiresPayment,
+            'invoice_amount' => $invoiceAmount,
+            'storage_fee' => $storageFee,
+            'days_stored' => $task->getDaysUncollected(),
+            'total_amount_due' => $requiresPayment ? ($invoiceAmount + $storageFee) : $storageFee,
+        ]);
+    }
+
+    /**
+     * Process invoice payment at front desk during collection
+     */
+    public function processPayment(Request $request, $invoiceId)
+    {
+        $request->validate([
+            'payment_method' => 'required|in:cash,card,mobile_money',
+            'amount_received' => 'required|numeric|min:0',
+        ]);
+
+        $invoice = Invoice::with('task')->findOrFail($invoiceId);
+
+        if ($invoice->status === 'paid') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This invoice has already been paid.',
+            ], 400);
+        }
+
+        if ($request->amount_received < $invoice->total) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Insufficient payment amount. Required: $' . number_format($invoice->total, 2),
+            ], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            $invoice->update([
+                'status' => 'paid',
+                'paid_at' => now(),
+                'payment_method' => $request->payment_method,
+            ]);
+
+            // Log the payment
+            Log::info('Front desk payment processed', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'amount' => $invoice->total,
+                'payment_method' => $request->payment_method,
+                'processed_by' => auth()->id(),
+                'task_id' => $invoice->task->id,
+            ]);
+
+            // Notify client
+            $this->notificationService->notifyClientPaymentReceived($invoice->task);
+
+            DB::commit();
+
+            $change = $request->amount_received - $invoice->total;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment processed successfully!',
+                'change' => $change,
+                'invoice' => $invoice,
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Payment processing failed', [
+                'invoice_id' => $invoiceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment processing failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Process device collection (checkout) with optional payment
+     */
+    public function processCollection(Request $request, $taskId)
+    {
+        $request->validate([
+            'collected_by' => 'required|string|max:255',
+            'id_type' => 'required|string|max:50',
+            'id_number' => 'required|string|max:50',
+            'storage_fee_paid' => 'nullable|boolean',
+            'payment_method' => 'nullable|in:cash,card,mobile_money',
+            'amount_received' => 'nullable|numeric|min:0',
+        ]);
+
+        $task = Task::with(['user', 'invoice', 'storageFee'])->findOrFail($taskId);
+
+        // Verify task is completed or ready for collection
+        if (!in_array($task->status, ['completed', 'ready_for_collection'])) {
+            return back()->with('error', 'This device is not ready for collection. Current status: ' . ucfirst(str_replace('_', ' ', $task->status)));
+        }
+
+        DB::beginTransaction();
+        try {
+            // Process invoice payment if not paid
+            if ($task->invoice && $task->invoice->status !== 'paid') {
+                if (!$request->payment_method || !$request->amount_received) {
+                    return back()->with('error', 'Payment is required. Please provide payment method and amount.');
+                }
+
+                if ($request->amount_received < $task->invoice->total) {
+                    return back()->with('error', 'Insufficient payment amount. Required: $' . number_format($task->invoice->total, 2));
+                }
+
+                // Process the payment
+                $task->invoice->update([
+                    'status' => 'paid',
+                    'paid_at' => now(),
+                    'payment_method' => $request->payment_method,
+                ]);
+
+                $change = $request->amount_received - $task->invoice->total;
+
+                Log::info('Payment collected at device pickup', [
+                    'task_id' => $task->id,
+                    'task_code' => $task->task_id,
+                    'invoice_id' => $task->invoice->id,
+                    'amount' => $task->invoice->total,
+                    'payment_method' => $request->payment_method,
+                    'amount_received' => $request->amount_received,
+                    'change' => $change,
+                    'processed_by' => auth()->id(),
+                ]);
+            }
+
+            // Handle storage fees if applicable
+            if ($task->storageFee && $task->storageFee->total_fee > 0) {
+                if (!$request->storage_fee_paid) {
+                    return back()->with('error', 'Storage fee must be paid before collection. Amount due: $' . number_format($task->storageFee->total_fee, 2));
+                }
+
+                // Mark storage fee as paid
+                $task->storageFee->update([
+                    'paid_at' => now(),
+                ]);
+            }
+
+            // Update task to collected
+            $task->update([
+                'status' => 'collected',
+                'collected_at' => now(),
+                'collected_by' => $request->collected_by,
+                'collector_id_type' => $request->id_type,
+                'collector_id_number' => $request->id_number,
+            ]);
+
+            // Send notification to client
+            $this->notificationService->notifyClientDeviceCollected($task);
+
+            // Create collection log
+            Log::info('Device collected', [
+                'task_id' => $task->id,
+                'task_code' => $task->task_id,
+                'collected_by' => $request->collected_by,
+                'collector_id' => $request->id_number,
+                'processed_by' => auth()->user()->name,
+            ]);
+
+            DB::commit();
+
+            $successMessage = 'Device collected successfully!';
+            if (isset($change) && $change > 0) {
+                $successMessage .= ' Change to return: $' . number_format($change, 2);
+            }
+
+            return redirect()->route('frontdesk.collection-receipt', $task->id)
+                ->with('success', $successMessage);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Collection failed', [
+                'task_id' => $taskId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return back()->with('error', 'Collection failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Show collection receipt
+     */
+    public function collectionReceipt($taskId)
+    {
+        $task = Task::with(['user', 'deviceCategory', 'invoice', 'storageFee', 'technician'])
+            ->findOrFail($taskId);
+
+        if ($task->status !== 'collected') {
+            return redirect()->route('frontdesk.collection')
+                ->with('error', 'This device has not been collected yet.');
+        }
+
+        return view('frontdesk.collection-receipt', compact('task'));
+    }
 }
+

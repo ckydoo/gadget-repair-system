@@ -56,11 +56,15 @@ Route::middleware(['auth'])->prefix('frontdesk')->name('frontdesk.')->group(func
     Route::get('/walkin', [FrontDeskController::class, 'showWalkinForm'])->name('walkin');
     Route::post('/walkin', [FrontDeskController::class, 'registerWalkin'])->name('walkin.register');
 
-    // Device collection/checkout - NEW ROUTES
-    Route::get('/collection', [FrontDeskController::class, 'collectionForm'])->name('collection');
-    Route::post('/collection/search', [FrontDeskController::class, 'searchCollection'])->name('collection.search');
-    Route::post('/collection/{task}', [FrontDeskController::class, 'processCollection'])->name('collection.process');
-    Route::get('/collection/receipt/{task}', [FrontDeskController::class, 'collectionReceipt'])->name('collection-receipt');
+
+  // Collection pages
+  Route::get('/collection', [FrontDeskController::class, 'collectionIndex'])->name('collection');
+  Route::post('/collection/search', [FrontDeskController::class, 'searchDevice'])->name('collection.search');
+  Route::post('/collection/{task}', [FrontDeskController::class, 'processCollection'])->name('collection.process');
+  Route::get('/collection/{task}/receipt', [FrontDeskController::class, 'collectionReceipt'])->name('collection-receipt');
+
+  // Payment processing at front desk
+  Route::post('/payment/{invoice}', [FrontDeskController::class, 'processPayment'])->name('payment.process');
 
     // Invoice payment
     Route::post('/invoice/{invoice}/pay', [FrontDeskController::class, 'processPayment'])->name('invoice.pay');

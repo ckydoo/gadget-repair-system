@@ -4,179 +4,177 @@
 
 @section('content')
 <div class="container mx-auto px-4 py-8">
-    <div class="max-w-3xl mx-auto">
-        <!-- Print Button -->
-        <div class="mb-6 text-right no-print">
-            <button onclick="window.print()" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Print Receipt
-            </button>
-            <a href="{{ route('frontdesk.collection') }}" class="ml-3 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                Back to Collection
-            </a>
+    <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8" id="receipt">
+        <!-- Header -->
+        <div class="text-center border-b pb-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">COLLECTION RECEIPT</h1>
+            <p class="text-gray-600 mt-2">Device Collection Confirmation</p>
         </div>
 
-        <!-- Receipt -->
-        <div class="bg-white rounded-lg shadow-lg p-8">
-            <!-- Header -->
-            <div class="text-center mb-8 border-b pb-6">
-                <h1 class="text-3xl font-bold text-gray-800">COLLECTION RECEIPT</h1>
-                <p class="text-gray-600 mt-2">Device Successfully Collected</p>
+        <!-- Receipt Details -->
+        <div class="grid grid-cols-2 gap-6 mb-6">
+            <div>
+                <h3 class="text-sm font-semibold text-gray-600 mb-2">TASK INFORMATION</h3>
+                <div class="space-y-2">
+                    <div>
+                        <span class="text-gray-600 text-sm">Task ID:</span>
+                        <span class="ml-2 font-mono font-bold">{{ $task->task_id }}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 text-sm">Device:</span>
+                        <span class="ml-2">{{ $task->device_brand }} {{ $task->device_model }}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 text-sm">Category:</span>
+                        <span class="ml-2">{{ $task->deviceCategory->name }}</span>
+                    </div>
+                    @if($task->serial_number)
+                    <div>
+                        <span class="text-gray-600 text-sm">Serial Number:</span>
+                        <span class="ml-2 font-mono">{{ $task->serial_number }}</span>
+                    </div>
+                    @endif
+                </div>
             </div>
 
-            <!-- Receipt Details -->
-            <div class="mb-8">
-                <div class="grid grid-cols-2 gap-6 mb-6">
+            <div>
+                <h3 class="text-sm font-semibold text-gray-600 mb-2">COLLECTION DETAILS</h3>
+                <div class="space-y-2">
                     <div>
-                        <p class="text-sm text-gray-500 mb-1">Receipt Date</p>
-                        <p class="font-semibold">{{ $task->collected_at->format('F d, Y H:i A') }}</p>
+                        <span class="text-gray-600 text-sm">Collected By:</span>
+                        <span class="ml-2 font-semibold">{{ $task->collected_by }}</span>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-500 mb-1">Task ID</p>
-                        <p class="font-mono font-bold text-lg">{{ $task->task_id }}</p>
+                        <span class="text-gray-600 text-sm">ID Type:</span>
+                        <span class="ml-2">{{ ucwords(str_replace('_', ' ', $task->collector_id_type)) }}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 text-sm">ID Number:</span>
+                        <span class="ml-2 font-mono">{{ $task->collector_id_number }}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 text-sm">Collection Date:</span>
+                        <span class="ml-2">{{ $task->collected_at->format('d M Y, h:i A') }}</span>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <!-- Customer Info -->
-                <div class="bg-gray-50 rounded-lg p-6 mb-6">
-                    <h3 class="font-bold text-gray-800 mb-4">Customer Information</h3>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <p class="text-sm text-gray-500">Name</p>
-                            <p class="font-semibold">{{ $task->user->name }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Phone</p>
-                            <p class="font-semibold">{{ $task->user->phone }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Email</p>
-                            <p class="font-semibold">{{ $task->user->email }}</p>
-                        </div>
-                    </div>
+        <!-- Customer Information -->
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+            <h3 class="text-sm font-semibold text-gray-600 mb-2">CUSTOMER INFORMATION</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <span class="text-gray-600 text-sm">Name:</span>
+                    <span class="ml-2">{{ $task->user->name }}</span>
                 </div>
-
-                <!-- Device Info -->
-                <div class="bg-gray-50 rounded-lg p-6 mb-6">
-                    <h3 class="font-bold text-gray-800 mb-4">Device Information</h3>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <p class="text-sm text-gray-500">Device</p>
-                            <p class="font-semibold">{{ $task->device_brand }} {{ $task->device_model }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Category</p>
-                            <p class="font-semibold">{{ $task->deviceCategory->name }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Technician</p>
-                            <p class="font-semibold">{{ $task->technician->name }}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-500">Service Type</p>
-                            <p class="font-semibold">{{ ucfirst($task->type) }}</p>
-                        </div>
-                    </div>
+                <div>
+                    <span class="text-gray-600 text-sm">Phone:</span>
+                    <span class="ml-2">{{ $task->user->phone }}</span>
                 </div>
-
-                <!-- Timeline -->
-                <div class="bg-gray-50 rounded-lg p-6 mb-6">
-                    <h3 class="font-bold text-gray-800 mb-4">Service Timeline</h3>
-                    <div class="space-y-3">
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Check-in Date:</span>
-                            <span class="font-semibold">{{ $task->created_at->format('M d, Y H:i') }}</span>
-                        </div>
-                        @if($task->started_at)
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Work Started:</span>
-                            <span class="font-semibold">{{ $task->started_at->format('M d, Y H:i') }}</span>
-                        </div>
-                        @endif
-                        @if($task->completed_at)
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Completed:</span>
-                            <span class="font-semibold">{{ $task->completed_at->format('M d, Y H:i') }}</span>
-                        </div>
-                        @endif
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Ready for Collection:</span>
-                            <span class="font-semibold">{{ $task->ready_at->format('M d, Y H:i') }}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Collected:</span>
-                            <span class="font-semibold text-green-600">{{ $task->collected_at->format('M d, Y H:i') }}</span>
-                        </div>
-                    </div>
+                <div>
+                    <span class="text-gray-600 text-sm">Email:</span>
+                    <span class="ml-2">{{ $task->user->email }}</span>
                 </div>
+            </div>
+        </div>
 
-                <!-- Financial Summary -->
-                @if($task->invoice)
-                <div class="bg-gray-50 rounded-lg p-6 mb-6">
-                    <h3 class="font-bold text-gray-800 mb-4">Financial Summary</h3>
-                    <div class="space-y-2">
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Invoice Number:</span>
-                            <span class="font-mono font-semibold">{{ $task->invoice->invoice_number }}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Materials Cost:</span>
-                            <span class="font-semibold">${{ number_format($task->invoice->materials_cost, 2) }}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Labour Cost:</span>
-                            <span class="font-semibold">${{ number_format($task->invoice->labour_cost, 2) }}</span>
-                        </div>
-                        @if($task->invoice->transport_cost > 0)
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Transport Cost:</span>
-                            <span class="font-semibold">${{ number_format($task->invoice->transport_cost, 2) }}</span>
-                        </div>
-                        @endif
-                        @if($task->storageFee && $task->storageFee->total_fee > 0)
-                        <div class="flex justify-between text-yellow-700">
-                            <span class="font-medium">Storage Fee ({{ $task->getDaysUncollected() }} days):</span>
-                            <span class="font-semibold">${{ number_format($task->storageFee->total_fee, 2) }}</span>
-                        </div>
-                        @endif
-                        <div class="border-t pt-2 mt-2">
-                            <div class="flex justify-between text-lg">
-                                <span class="font-bold text-gray-800">Total Paid:</span>
-                                <span class="font-bold text-green-600">
-                                    ${{ number_format($task->invoice->total + ($task->storageFee ? $task->storageFee->total_fee : 0), 2) }}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600">Payment Method:</span>
-                            <span class="font-semibold">{{ ucfirst(str_replace('_', ' ', $task->invoice->payment_method ?? 'N/A')) }}</span>
-                        </div>
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600">Paid On:</span>
-                            <span class="font-semibold">{{ $task->invoice->paid_at ? $task->invoice->paid_at->format('M d, Y H:i') : 'N/A' }}</span>
-                        </div>
-                    </div>
+        <!-- Invoice Details -->
+        @if($task->invoice)
+        <div class="mb-6 p-4 border border-gray-200 rounded-lg">
+            <h3 class="text-sm font-semibold text-gray-600 mb-3">PAYMENT DETAILS</h3>
+            <div class="space-y-2">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Invoice Number:</span>
+                    <span class="font-mono">{{ $task->invoice->invoice_number }}</span>
                 </div>
-                @endif
-
-                <!-- Warranty Info -->
-                @if($task->warranty_days > 0)
-                <div class="bg-blue-50 border border-blue-300 rounded-lg p-6 mb-6">
-                    <h3 class="font-bold text-blue-800 mb-2">🛡️ Warranty Information</h3>
-                    <p class="text-blue-700">
-                        This repair is covered by a <strong>{{ $task->warranty_days }}-day warranty</strong>.
-                    </p>
-                    <p class="text-sm text-blue-600 mt-2">
-                        Valid until: <strong>{{ $task->warranty_expires_at->format('F d, Y') }}</strong>
-                    </p>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Invoice Amount:</span>
+                    <span class="font-semibold">${{ number_format($task->invoice->total, 2) }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Payment Status:</span>
+                    <span class="px-2 py-1 rounded text-sm font-semibold {{ $task->invoice->status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                        {{ strtoupper($task->invoice->status) }}
+                    </span>
+                </div>
+                @if($task->invoice->status === 'paid')
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Payment Method:</span>
+                    <span>{{ ucwords(str_replace('_', ' ', $task->invoice->payment_method)) }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Payment Date:</span>
+                    <span>{{ $task->invoice->paid_at->format('d M Y, h:i A') }}</span>
                 </div>
                 @endif
             </div>
+        </div>
+        @endif
 
-            <!-- Footer -->
-            <div class="border-t pt-6 text-center text-sm text-gray-600">
-                <p class="mb-2">Thank you for choosing our repair service!</p>
-                <p>For support or inquiries, please contact us or visit our website.</p>
-                <p class="mt-4 font-semibold">Keep this receipt for warranty claims</p>
+        <!-- Storage Fee (if applicable) -->
+        @if($task->storageFee && $task->storageFee->total_fee > 0)
+        <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h3 class="text-sm font-semibold text-yellow-800 mb-3">STORAGE FEE</h3>
+            <div class="space-y-2">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Days in Storage:</span>
+                    <span>{{ $task->storageFee->days_stored }} days</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Daily Rate:</span>
+                    <span>${{ number_format($task->storageFee->daily_rate, 2) }}</span>
+                </div>
+                <div class="flex justify-between font-bold">
+                    <span class="text-gray-800">Storage Fee Total:</span>
+                    <span>${{ number_format($task->storageFee->total_fee, 2) }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Payment Status:</span>
+                    <span class="px-2 py-1 rounded text-sm font-semibold {{ $task->storageFee->paid_at ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                        {{ $task->storageFee->paid_at ? 'PAID' : 'UNPAID' }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        <!-- Warranty Information -->
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 class="text-sm font-semibold text-blue-800 mb-2">📋 WARRANTY INFORMATION</h3>
+            <p class="text-sm text-gray-700">
+                This device is covered under warranty. The warranty period is
+                <strong>{{ $task->deviceCategory->warranty_days ?? 30 }} days</strong> from the collection date.
+            </p>
+            <p class="text-sm text-gray-700 mt-2">
+                Warranty valid until: <strong>{{ $task->collected_at->addDays($task->deviceCategory->warranty_days ?? 30)->format('d M Y') }}</strong>
+            </p>
+        </div>
+
+        <!-- Processed By -->
+        <div class="border-t pt-4 text-center text-sm text-gray-600">
+            <p>Processed by: <span class="font-semibold">{{ auth()->user()->name }}</span></p>
+            <p class="mt-1">Front Desk Staff</p>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-8 pt-6 border-t text-center text-sm text-gray-500">
+            <p>Thank you for choosing our services!</p>
+            <p class="mt-2">For support or inquiries, please contact us.</p>
+        </div>
+
+        <!-- Print Instructions -->
+        <div class="mt-6 p-4 bg-gray-100 rounded-lg text-center no-print">
+            <p class="text-gray-700 mb-3">Please keep this receipt for your records</p>
+            <div class="flex justify-center gap-4">
+                <button onclick="window.print()"
+                    class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                    🖨️ Print Receipt
+                </button>
+                <a href="{{ route('frontdesk.collection') }}"
+                    class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition">
+                    ← Back to Collection
+                </a>
             </div>
         </div>
     </div>
@@ -185,10 +183,16 @@
 <style>
 @media print {
     .no-print {
-        display: none;
+        display: none !important;
     }
+
     body {
         background: white;
+    }
+
+    #receipt {
+        box-shadow: none;
+        max-width: 100%;
     }
 }
 </style>
