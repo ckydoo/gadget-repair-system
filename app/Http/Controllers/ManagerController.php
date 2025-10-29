@@ -491,8 +491,358 @@ public function deleteTechnician($id)
     }
 }
 
+public function users(Request $request)
+{
+   $query = User::with('roles');
 
+   // Filter by role (admin, manager, supervisor, front_desk, technician, client)
+   if ($request->filled('role')) {
+       $query->whereHas('roles', function($q) use ($request) {
+           $q->where('name', $request->role);
+       });
+   }
 
+   // Filter by status (active, inactive)
+   if ($request->filled('status')) {
+       if ($request->status === 'active') {
+           $query->where('is_active', true);
+       } elseif ($request->status === 'inactive') {
+           $query->where('is_active', false);
+       }
+   }
 
+   // Search by name or email
+   if ($request->filled('search')) {
+       $searchTerm = '%' . $request->search . '%';
+       $query->where(function($q) use ($searchTerm) {
+           $q->where('name', 'like', $searchTerm)
+             ->orWhere('email', 'like', $searchTerm);
+       });
+   }
 
+   // Get paginated results
+   $users = $query->orderBy('created_at', 'desc')->paginate(15);
+
+   // Get counts by role for statistics
+   $adminCount = User::whereHas('roles', fn($q) => $q->where('name', 'admin'))->count();
+   $managerCount = User::whereHas('roles', fn($q) => $q->where('name', 'manager'))->count();
+   $supervisorCount = User::whereHas('roles', fn($q) => $q->where('name', 'supervisor'))->count();
+   $frontDeskCount = User::whereHas('roles', fn($q) => $q->where('name', 'front_desk'))->count();
+
+   return view('manager.users', compact(
+       'users',
+       'adminCount',
+       'managerCount', 
+       'supervisorCount',
+       'frontDeskCount'
+   ));
+}
+
+/**
+* Show the form for creating a new user
+* 
+* @return \Illuminate\View\View
+*/
+public function createUser()
+{
+   $roles = [
+       'admin' => 'Administrator - Full system access',
+       'manager' => 'Manager - Manage operations and staff',
+       'supervisor' => 'Supervisor - Oversee work and staff',
+       'front_desk' => 'Front Desk Staff - Customer service',
+       'technician' => 'Technician - Device repairs and services',
+       'client' => 'Client - Regular customer account',
+   ];
+
+   return view('manager.users-create', compact('roles'));
+}
+
+/**
+* Store a newly created user in database
+* 
+* @param Request $request
+* @return \Illuminate\Http\RedirectResponse
+*/
+public function storeUser(Request $request)
+{
+   // Validate input
+   $validated = $request->validate([
+       'name' => [
+           'required',
+           'string',
+           'max:255',
+       ],
+       'email' => [
+           'required',
+           'email',
+           'unique:users,email',
+       ],
+       'phone' => [
+           'nullable',
+           'string',
+           'max:20',
+       ],
+       'password' => [
+           'required',
+           'string',
+           'min:8',
+           'confirmed',
+       ],
+       'role' => [
+           'required',
+           'string',
+           'in:admin,manager,supervisor,front_desk,technician,client',
+       ],
+   ]);
+
+   try {
+       DB::beginTransaction();
+
+       // Create the user
+       $user = User::create([
+           'name' => $validated['name'],
+           'email' => $validated['email'],
+           'password' => Hash::make($validated['password']),
+           'phone' => $validated['phone'] ?? null,
+           'is_active' => true,
+       ]);
+
+       // Assign role using Laravel Spatie Roles & Permissions
+       $user->assignRole($validated['role']);
+
+       DB::commit();
+
+       // Log the activity (optional - requires activity log package)
+       // activity()
+       //     ->causedBy(auth()->user())
+       //     ->performedOn($user)
+       //     ->log('User created: ' . $user->name);
+
+       return redirect()
+           ->route('manager.users')
+           ->with('success', "User '{$user->name}' has been created successfully!");
+
+   } catch (\Exception $e) {
+       DB::rollBack();
+       
+       return redirect()
+           ->back()
+           ->with('error', 'Failed to create user. Please try again.')
+           ->withInput();
+   }
+}
+
+/**
+* Show the form for editing an existing user
+* 
+* @param User $user
+* @return \Illuminate\View\View
+*/
+public function editUser(User $user)
+{
+   // Prevent editing admin if not super admin
+   if ($user->hasRole('admin') && !auth()->user()->hasRole('admin')) {
+       return redirect()
+           ->route('manager.users')
+           ->with('error', 'You do not have permission to edit administrators.');
+   }
+
+   $roles = [
+       'admin' => 'Administrator',
+       'manager' => 'Manager',
+       'supervisor' => 'Supervisor',
+       'front_desk' => 'Front Desk Staff',
+       'technician' => 'Technician',
+       'client' => 'Client',
+   ];
+
+   return view('manager.users-edit', compact('user', 'roles'));
+}
+
+/**
+* Update the specified user in database
+* 
+* @param Request $request
+* @param User $user
+* @return \Illuminate\Http\RedirectResponse
+*/
+public function updateUser(Request $request, User $user)
+{
+   // Validate input
+   $validated = $request->validate([
+       'name' => [
+           'required',
+           'string',
+           'max:255',
+       ],
+       'email' => [
+           'required',
+           'email',
+           'unique:users,email,' . $user->id,
+       ],
+       'phone' => [
+           'nullable',
+           'string',
+           'max:20',
+       ],
+       'role' => [
+           'required',
+           'string',
+           'in:admin,manager,supervisor,front_desk,technician,client',
+       ],
+       'is_active' => [
+           'boolean',
+       ],
+   ]);
+
+   try {
+       DB::beginTransaction();
+
+       // Store old role for logging
+       $oldRole = $user->roles->first()?->name;
+
+       // Update user information
+       $user->update([
+           'name' => $validated['name'],
+           'email' => $validated['email'],
+           'phone' => $validated['phone'] ?? null,
+           'is_active' => $request->boolean('is_active'),
+       ]);
+
+       // Update role if changed
+       if ($oldRole !== $validated['role']) {
+           $user->syncRoles([$validated['role']]);
+       }
+
+       DB::commit();
+
+       // Log the activity (optional)
+       // if ($oldRole !== $validated['role']) {
+       //     activity()
+       //         ->causedBy(auth()->user())
+       //         ->performedOn($user)
+       //         ->log("Role changed from {$oldRole} to {$validated['role']}");
+       // }
+
+       return redirect()
+           ->route('manager.users')
+           ->with('success', "User '{$user->name}' has been updated successfully!");
+
+   } catch (\Exception $e) {
+       DB::rollBack();
+
+       return redirect()
+           ->back()
+           ->with('error', 'Failed to update user. Please try again.')
+           ->withInput();
+   }
+}
+
+/**
+* Delete the specified user from database
+* 
+* @param User $user
+* @return \Illuminate\Http\RedirectResponse
+*/
+public function deleteUser(User $user)
+{
+   // Prevent self-deletion
+   if ($user->id === auth()->id()) {
+       return redirect()
+           ->route('manager.users')
+           ->with('error', 'You cannot delete your own account!');
+   }
+
+   // Prevent deletion of last admin
+   if ($user->hasRole('admin')) {
+       $adminCount = User::whereHas('roles', fn($q) => $q->where('name', 'admin'))->count();
+       if ($adminCount <= 1) {
+           return redirect()
+               ->route('manager.users')
+               ->with('error', 'Cannot delete the last administrator account.');
+       }
+   }
+
+   try {
+       DB::beginTransaction();
+
+       $userName = $user->name;
+
+       // Delete user
+       $user->delete();
+
+       DB::commit();
+
+       // Log the activity (optional)
+       // activity()
+       //     ->causedBy(auth()->user())
+       //     ->log("User deleted: {$userName}");
+
+       return redirect()
+           ->route('manager.users')
+           ->with('success', "User '{$userName}' has been deleted successfully!");
+
+   } catch (\Exception $e) {
+       DB::rollBack();
+
+       return redirect()
+           ->route('manager.users')
+           ->with('error', 'Failed to delete user. Please try again.');
+   }
+}
+
+/**
+* Export users list (optional - for CSV export)
+* 
+* @param Request $request
+* @return \Symfony\Component\HttpFoundation\StreamedResponse
+*/
+public function exportUsers(Request $request)
+{
+   $query = User::with('roles');
+
+   if ($request->filled('role')) {
+       $query->whereHas('roles', function($q) use ($request) {
+           $q->where('name', $request->role);
+       });
+   }
+
+   $users = $query->get();
+
+   $csvFileName = 'users_export_' . now()->format('Y-m-d_H-i-s') . '.csv';
+
+   $headers = [
+       'Content-Encoding' => 'UTF-8',
+       'Content-type' => 'text/csv; charset=UTF-8',
+       'Content-Disposition' => "attachment; filename=$csvFileName",
+       'Pragma' => 'no-cache',
+       'Expires' => '0',
+   ];
+
+   $callback = function() use ($users) {
+       $file = fopen('php://output', 'w');
+       
+       // BOM for UTF-8
+       fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+       
+       // Header row
+       fputcsv($file, ['Name', 'Email', 'Phone', 'Role', 'Status', 'Created At']);
+
+       // Data rows
+       foreach ($users as $user) {
+           fputcsv($file, [
+               $user->name,
+               $user->email,
+               $user->phone ?? 'N/A',
+               $user->roles->first()?->name ?? 'N/A',
+               $user->is_active ? 'Active' : 'Inactive',
+               $user->created_at->format('Y-m-d H:i:s'),
+           ]);
+       }
+
+       fclose($file);
+   };
+
+   return response()->stream($callback, 200, $headers);
+}
 }
